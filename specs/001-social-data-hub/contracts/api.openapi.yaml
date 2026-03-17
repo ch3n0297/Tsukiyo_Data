@@ -1,0 +1,185 @@
+openapi: 3.1.0
+info:
+  title: Social Data Hub Internal API
+  version: 0.1.0
+  description: >
+    內部社群資料中台 API。首版提供手動刷新與排程同步觸發介面，
+    請求需帶 HMAC 驗證 header。
+servers:
+  - url: http://localhost:3000
+components:
+  securitySchemes:
+    HmacAuth:
+      type: apiKey
+      in: header
+      name: x-signature
+  parameters:
+    ClientIdHeader:
+      name: x-client-id
+      in: header
+      required: true
+      schema:
+        type: string
+    TimestampHeader:
+      name: x-timestamp
+      in: header
+      required: true
+      schema:
+        type: string
+        format: date-time
+    SignatureHeader:
+      name: x-signature
+      in: header
+      required: true
+      schema:
+        type: string
+  schemas:
+    ManualRefreshRequest:
+      type: object
+      required:
+        - platform
+        - account_id
+        - refresh_days
+        - request_source
+      properties:
+        platform:
+          type: string
+          enum: [instagram, facebook, tiktok]
+        account_id:
+          type: string
+        refresh_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+        request_source:
+          type: string
+    ManualRefreshAccepted:
+      type: object
+      required:
+        - job_id
+        - status
+        - system_message
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum: [queued]
+        system_message:
+          type: string
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - system_message
+      properties:
+        error:
+          type: string
+        system_message:
+          type: string
+    ScheduledSyncRequest:
+      type: object
+      required:
+        - requested_by
+      properties:
+        requested_by:
+          type: string
+    ScheduledSyncAccepted:
+      type: object
+      required:
+        - accepted_jobs
+        - skipped_accounts
+      properties:
+        accepted_jobs:
+          type: array
+          items:
+            type: string
+        skipped_accounts:
+          type: array
+          items:
+            type: object
+            required:
+              - account_key
+              - reason
+            properties:
+              account_key:
+                type: string
+              reason:
+                type: string
+paths:
+  /health:
+    get:
+      summary: 取得服務健康狀態
+      responses:
+        '200':
+          description: Service health
+  /api/v1/refresh-jobs/manual:
+    post:
+      summary: 送出單一帳號手動刷新
+      parameters:
+        - $ref: '#/components/parameters/ClientIdHeader'
+        - $ref: '#/components/parameters/TimestampHeader'
+        - $ref: '#/components/parameters/SignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualRefreshRequest'
+      responses:
+        '202':
+          description: Request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualRefreshAccepted'
+        '400':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Signature validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate active job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/internal/scheduled-sync:
+    post:
+      summary: 手動觸發一次排程同步
+      parameters:
+        - $ref: '#/components/parameters/ClientIdHeader'
+        - $ref: '#/components/parameters/TimestampHeader'
+        - $ref: '#/components/parameters/SignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduledSyncRequest'
+      responses:
+        '202':
+          description: Schedule accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledSyncAccepted'
+        '401':
+          description: Signature validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

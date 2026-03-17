@@ -1,0 +1,12 @@
+node_modules/
+coverage/
+.DS_Store
+*.log
+.env
+.env.*
+data/account-configs.json
+data/jobs.json
+data/raw-platform-records.json
+data/normalized-content-records.json
+data/sheet-status.json
+data/sheet-output.json

@@ -1,0 +1,31 @@
+{
+  "account_id": "acct-instagram-demo",
+  "items": [
+    {
+      "id": "ig-reel-001",
+      "media_type": "reel",
+      "caption": "Launch highlight reel",
+      "permalink": "https://instagram.example.com/p/ig-reel-001",
+      "timestamp": "2026-03-16T09:00:00.000Z",
+      "metrics": {
+        "plays": 1420,
+        "likes": 130,
+        "comments": 14,
+        "shares": 9
+      }
+    },
+    {
+      "id": "ig-post-002",
+      "media_type": "post",
+      "caption": "Backstage photo set",
+      "permalink": "https://instagram.example.com/p/ig-post-002",
+      "timestamp": "2026-03-12T08:00:00.000Z",
+      "metrics": {
+        "plays": 640,
+        "likes": 92,
+        "comments": 8,
+        "shares": 3
+      }
+    }
+  ]
+}

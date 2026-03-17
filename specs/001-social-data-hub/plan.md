@@ -1,104 +1,73 @@
-# Implementation Plan: [FEATURE]
+# Implementation Plan: 社群行銷資料中台
 
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
-
-**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
+**Branch**: `001-social-data-hub` | **Date**: 2026-03-18 | **Spec**: [/Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/specs/001-social-data-hub/spec.md](/Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/specs/001-social-data-hub/spec.md)
+**Input**: Feature specification from `/specs/001-social-data-hub/spec.md`
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+建立一個以 Node.js 24 為核心的單體內部服務，負責排程抓取、手動刷新、raw data/normalized data 持久化、狀態回寫與請求保護。首版採用標準函式庫與可替換 adapter 設計：平台抓取以 fixture adapter 模擬 Instagram、Facebook、TikTok 的資料來源，Google Sheet 同步以 file-backed gateway 模擬，讓整條資料流、工作佇列、驗證、去重複、限流與狀態管理可以先完整落地並可測試。
 
 ## Technical Context
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
-
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Language/Version**: Node.js 24, ESM JavaScript  
+**Primary Dependencies**: 無外部 runtime dependency，使用 Node 標準函式庫 (`http`, `crypto`, `fs/promises`, `timers`, `node:test`)  
+**Storage**: 檔案式 JSON store（`data/` 目錄，原子寫入）  
+**Testing**: `node --test`  
+**Target Platform**: Linux/macOS server running Node.js 24  
+**Project Type**: 單體 web-service + in-process worker  
+**Performance Goals**: 有效手動刷新請求應立即回覆 `202 Accepted`；預設最多 3 個並行工作；背景工作完成後立即回寫狀態  
+**Constraints**: 不可在 HTTP request thread 直接等待外部抓取完成；同帳號不得有多個 active job；Server 為唯一可信來源；Google Sheet 失敗不可抹除已保存的抓取結果  
+**Scale/Scope**: 首版以數十到百級帳號、3 個平台、單一 service instance 為目標
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+目前 `/Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/.specify/memory/constitution.md` 仍為模板，沒有已生效的專案原則或 gate 條文，因此本 feature 以 `spec.md` 的功能需求與本次設計文件作為唯一約束來源。Phase 1 設計後重新檢查，仍無額外憲章衝突。
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-specs/[###-feature]/
-├── plan.md              # This file (/speckit.plan command output)
-├── research.md          # Phase 0 output (/speckit.plan command)
-├── data-model.md        # Phase 1 output (/speckit.plan command)
-├── quickstart.md        # Phase 1 output (/speckit.plan command)
-├── contracts/           # Phase 1 output (/speckit.plan command)
-└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
+specs/001-social-data-hub/
+├── plan.md
+├── research.md
+├── data-model.md
+├── quickstart.md
+├── contracts/
+│   └── api.openapi.yaml
+└── tasks.md
 ```
 
 ### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
 
 ```text
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
 src/
-├── models/
-├── services/
+├── adapters/
+│   ├── platforms/
+│   └── sheets/
 ├── cli/
-└── lib/
+├── lib/
+├── repositories/
+├── routes/
+├── services/
+├── app.js
+├── config.js
+└── server.js
+
+fixtures/
+└── platforms/
 
 tests/
-├── contract/
 ├── integration/
 └── unit/
-
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Structure Decision**: 採單一 Node.js 專案。HTTP API、排程器與 worker 共用同一套服務層與 repository，減少首版協作成本；平台抓取與 Sheet 同步透過 adapter 分層，讓未來可替換成正式 API 整合而不影響核心流程。
 
 ## Complexity Tracking
 
-> **Fill ONLY if Constitution Check has violations that must be justified**
-
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+| 無 | N/A | N/A |

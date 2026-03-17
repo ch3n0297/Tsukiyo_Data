@@ -1,0 +1,31 @@
+{
+  "account_id": "acct-tiktok-demo",
+  "items": [
+    {
+      "aweme_id": "tt-video-001",
+      "content_type": "video",
+      "desc": "Trend response clip",
+      "share_url": "https://tiktok.example.com/v/tt-video-001",
+      "create_time": "2026-03-17T13:45:00.000Z",
+      "analytics": {
+        "play_count": 3200,
+        "digg_count": 244,
+        "comment_count": 28,
+        "share_count": 19
+      }
+    },
+    {
+      "aweme_id": "tt-video-002",
+      "content_type": "video",
+      "desc": "Behind the scenes teaser",
+      "share_url": "https://tiktok.example.com/v/tt-video-002",
+      "create_time": "2026-03-11T07:20:00.000Z",
+      "analytics": {
+        "play_count": 1880,
+        "digg_count": 160,
+        "comment_count": 17,
+        "share_count": 8
+      }
+    }
+  ]
+}
