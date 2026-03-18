@@ -2,6 +2,7 @@ import http from "node:http";
 import { loadConfig } from "./config.js";
 import { FileSheetGateway } from "./adapters/sheets/file-sheet-gateway.js";
 import { createPlatformRegistry } from "./adapters/platforms/platform-registry.js";
+import { toErrorResponse } from "./lib/errors.js";
 import { FileStore } from "./lib/fs-store.js";
 import { sendJson } from "./lib/http.js";
 import { AccountConfigRepository } from "./repositories/account-config-repository.js";
@@ -12,6 +13,8 @@ import { SheetSnapshotRepository } from "./repositories/sheet-snapshot-repositor
 import { handleHealthRoute } from "./routes/health-route.js";
 import { handleInternalScheduledSyncRoute } from "./routes/internal-scheduled-sync-route.js";
 import { handleManualRefreshRoute } from "./routes/manual-refresh-route.js";
+import { handleStaticFrontendRoute } from "./routes/static-frontend-route.js";
+import { handleUiAccountDetailRoute, handleUiAccountsRoute } from "./routes/ui-accounts-route.js";
 import { seedDemoData } from "./cli/seed-demo.js";
 import { JobQueue } from "./services/job-queue.js";
 import { ManualRefreshService } from "./services/manual-refresh-service.js";
@@ -20,6 +23,7 @@ import { RefreshOrchestrator } from "./services/refresh-orchestrator.js";
 import { ScheduledSyncService } from "./services/scheduled-sync-service.js";
 import { SchedulerService } from "./services/scheduler-service.js";
 import { StatusService } from "./services/status-service.js";
+import { UiDashboardService } from "./services/ui-dashboard-service.js";
 
 async function recoverJobs({
   accountRepository,
@@ -41,7 +45,7 @@ async function recoverJobs({
       status: "error",
       finishedAt,
       errorCode: "PROCESS_RESTARTED",
-      systemMessage: "Service restarted while the job was running.",
+      systemMessage: "服務重新啟動，工作在執行期間中斷。",
     };
 
     await jobRepository.updateById(runningJob.id, {
@@ -57,7 +61,9 @@ async function recoverJobs({
   }
 
   const queuedJobs = await jobRepository.listByStatuses(["queued"]);
-  queuedJobs.forEach((job) => jobQueue.enqueue(job));
+  for (const job of queuedJobs) {
+    await jobQueue.enqueue(job);
+  }
 }
 
 export async function createApp(overrides = {}) {
@@ -136,6 +142,11 @@ export async function createApp(overrides = {}) {
     intervalMs: config.scheduleIntervalMs,
     logger: config.logger,
   });
+  const uiDashboardService = new UiDashboardService({
+    accountRepository: repositories.accountRepository,
+    sheetSnapshotRepository: repositories.sheetSnapshotRepository,
+    clock: config.clock,
+  });
 
   await statusService.bootstrapAccountSnapshots();
   await recoverJobs({
@@ -157,31 +168,76 @@ export async function createApp(overrides = {}) {
     manualRefreshService,
     scheduledSyncService,
     schedulerService,
+    uiDashboardService,
   };
 
   const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
-    const key = `${req.method} ${url.pathname}`;
+    try {
+      const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
+      const key = `${req.method} ${url.pathname}`;
 
-    if (key === "GET /health") {
-      await handleHealthRoute({ res, services, config });
-      return;
+      if (
+        req.method === "GET" &&
+        (await handleStaticFrontendRoute({ res, pathname: url.pathname }))
+      ) {
+        return;
+      }
+
+      if (key === "GET /health") {
+        handleHealthRoute({ res, services, config });
+        return;
+      }
+
+      if (key === "GET /api/v1/ui/accounts") {
+        await handleUiAccountsRoute({ res, services });
+        return;
+      }
+
+      if (req.method === "GET") {
+        const accountDetailMatch = url.pathname.match(/^\/api\/v1\/ui\/accounts\/([^/]+)\/([^/]+)$/);
+
+        if (accountDetailMatch) {
+          await handleUiAccountDetailRoute({
+            res,
+            services,
+            params: {
+              platform: decodeURIComponent(accountDetailMatch[1]),
+              accountId: decodeURIComponent(accountDetailMatch[2]),
+            },
+          });
+          return;
+        }
+      }
+
+      if (key === "POST /api/v1/refresh-jobs/manual") {
+        await handleManualRefreshRoute({ req, res, services, config });
+        return;
+      }
+
+      if (key === "POST /api/v1/internal/scheduled-sync") {
+        await handleInternalScheduledSyncRoute({ req, res, services, config });
+        return;
+      }
+
+      sendJson(res, 404, {
+        error: "NOT_FOUND",
+        system_message: "找不到對應的路由。",
+      });
+    } catch (error) {
+      config.logger.error("Unhandled request failure", {
+        method: req.method,
+        path: req.url,
+        error,
+      });
+
+      if (res.headersSent) {
+        res.end();
+        return;
+      }
+
+      const response = toErrorResponse(error);
+      sendJson(res, response.statusCode, response.body);
     }
-
-    if (key === "POST /api/v1/refresh-jobs/manual") {
-      await handleManualRefreshRoute({ req, res, services, config });
-      return;
-    }
-
-    if (key === "POST /api/v1/internal/scheduled-sync") {
-      await handleInternalScheduledSyncRoute({ req, res, services, config });
-      return;
-    }
-
-    sendJson(res, 404, {
-      error: "NOT_FOUND",
-      system_message: "Route not found.",
-    });
   });
 
   return {

@@ -1,5 +1,6 @@
 node_modules/
 coverage/
+frontend/dist/
 .DS_Store
 *.log
 .env
@@ -11,3 +12,4 @@ data/normalized-content-records.json
 data/sheet-status.json
 data/sheet-output.json
 tiktok-verify-site/
+Homework_rule.md
