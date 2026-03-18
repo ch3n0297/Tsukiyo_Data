@@ -11,9 +11,9 @@
 
 **Purpose**: 建立 Node.js 專案骨架與基本執行入口
 
-- [X] T001 Create project manifest and ignore rules in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/package.json and /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/.gitignore
-- [X] T002 Create runtime bootstrap and configuration loading in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/config.js, /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/app.js, and /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/server.js
-- [X] T003 [P] Create shared utility modules in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/lib/http.js, /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/lib/logger.js, and /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/lib/fs-store.js
+- [X] T001 Create project manifest and ignore rules in `package.json` and `.gitignore`
+- [X] T002 Create runtime bootstrap and configuration loading in `src/config.js`, `src/app.js`, and `src/server.js`
+- [X] T003 [P] Create shared utility modules in `src/lib/http.js`, `src/lib/logger.js`, and `src/lib/fs-store.js`
 
 ---
 
@@ -23,11 +23,11 @@
 
 **⚠️ CRITICAL**: 完成前不可進入 user story 實作
 
-- [X] T004 Create file-backed repositories in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/repositories/account-config-repository.js, /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/repositories/job-repository.js, /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/repositories/raw-record-repository.js, /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/repositories/normalized-record-repository.js, and /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/repositories/sheet-snapshot-repository.js
-- [X] T005 [P] Implement request authentication and payload validation in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/services/auth-service.js and /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/services/validation-service.js
-- [X] T006 [P] Implement platform and sheet adapters in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/adapters/platforms/instagram-adapter.js, /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/adapters/platforms/facebook-adapter.js, /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/adapters/platforms/tiktok-adapter.js, /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/adapters/platforms/platform-registry.js, and /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/adapters/sheets/file-sheet-gateway.js
-- [X] T007 Create queue, orchestration, and scheduler services in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/services/job-queue.js, /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/services/refresh-orchestrator.js, /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/services/manual-refresh-service.js, and /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/services/scheduler-service.js
-- [X] T008 [P] Seed demo data and fixtures in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/cli/seed-demo.js and /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/fixtures/platforms/*.json
+- [X] T004 Create file-backed repositories in `src/repositories/account-config-repository.js`, `src/repositories/job-repository.js`, `src/repositories/raw-record-repository.js`, `src/repositories/normalized-record-repository.js`, and `src/repositories/sheet-snapshot-repository.js`
+- [X] T005 [P] Implement request authentication and payload validation in `src/services/auth-service.js` and `src/services/validation-service.js`
+- [X] T006 [P] Implement platform and sheet adapters in `src/adapters/platforms/instagram-adapter.js`, `src/adapters/platforms/facebook-adapter.js`, `src/adapters/platforms/tiktok-adapter.js`, `src/adapters/platforms/platform-registry.js`, and `src/adapters/sheets/file-sheet-gateway.js`
+- [X] T007 Create queue, orchestration, and scheduler services in `src/services/job-queue.js`, `src/services/refresh-orchestrator.js`, `src/services/manual-refresh-service.js`, and `src/services/scheduler-service.js`
+- [X] T008 [P] Seed demo data and fixtures in `src/cli/seed-demo.js` and `fixtures/platforms/*.json`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -41,14 +41,14 @@
 
 ### Tests for User Story 1
 
-- [X] T009 [P] [US1] Add scheduled sync integration test in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/tests/integration/scheduled-sync.test.js
+- [X] T009 [P] [US1] Add scheduled sync integration test in `tests/integration/scheduled-sync.test.js`
 
 ### Implementation for User Story 1
 
-- [X] T010 [P] [US1] Implement normalization pipeline in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/services/normalization-service.js
-- [X] T011 [US1] Implement scheduled sync service in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/services/scheduled-sync-service.js
-- [X] T012 [US1] Implement scheduled sync route in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/routes/internal-scheduled-sync-route.js
-- [X] T013 [US1] Wire scheduled sync flow into /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/app.js
+- [X] T010 [P] [US1] Implement normalization pipeline in `src/services/normalization-service.js`
+- [X] T011 [US1] Implement scheduled sync service in `src/services/scheduled-sync-service.js`
+- [X] T012 [US1] Implement scheduled sync route in `src/routes/internal-scheduled-sync-route.js`
+- [X] T013 [US1] Wire scheduled sync flow into `src/app.js`
 
 **Checkpoint**: User Story 1 應可獨立完成並驗證
 
@@ -62,13 +62,13 @@
 
 ### Tests for User Story 2
 
-- [X] T014 [P] [US2] Add manual refresh integration test in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/tests/integration/manual-refresh.test.js
+- [X] T014 [P] [US2] Add manual refresh integration test in `tests/integration/manual-refresh.test.js`
 
 ### Implementation for User Story 2
 
-- [X] T015 [US2] Implement manual refresh route in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/routes/manual-refresh-route.js
-- [X] T016 [US2] Add request signing helper in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/cli/sign-request.js
-- [X] T017 [US2] Wire manual refresh flow into /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/app.js and /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/specs/001-social-data-hub/quickstart.md
+- [X] T015 [US2] Implement manual refresh route in `src/routes/manual-refresh-route.js`
+- [X] T016 [US2] Add request signing helper in `src/cli/sign-request.js`
+- [X] T017 [US2] Wire manual refresh flow into `src/app.js` and `specs/001-social-data-hub/quickstart.md`
 
 **Checkpoint**: User Stories 1 and 2 應可並存且各自可驗證
 
@@ -82,13 +82,13 @@
 
 ### Tests for User Story 3
 
-- [X] T018 [P] [US3] Add protections integration test in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/tests/integration/protections.test.js
+- [X] T018 [P] [US3] Add protections integration test in `tests/integration/protections.test.js`
 
 ### Implementation for User Story 3
 
-- [X] T019 [US3] Implement rate limit and dedup guards in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/services/manual-refresh-service.js
-- [X] T020 [US3] Implement status write-back and failure propagation in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/services/status-service.js and /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/adapters/sheets/file-sheet-gateway.js
-- [X] T021 [US3] Implement health/status route in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/src/routes/health-route.js
+- [X] T019 [US3] Implement rate limit and dedup guards in `src/services/manual-refresh-service.js`
+- [X] T020 [US3] Implement status write-back and failure propagation in `src/services/status-service.js` and `src/adapters/sheets/file-sheet-gateway.js`
+- [X] T021 [US3] Implement health/status route in `src/routes/health-route.js`
 
 **Checkpoint**: 所有 user stories 應可獨立工作
 
@@ -98,8 +98,8 @@
 
 **Purpose**: 補齊跨故事測試、文件與驗證
 
-- [X] T022 [P] Add unit tests for auth and normalization in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/tests/unit/auth-service.test.js and /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/tests/unit/normalization-service.test.js
-- [X] T023 Validate quickstart and command flow in /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/specs/001-social-data-hub/quickstart.md and /Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/package.json
+- [X] T022 [P] Add unit tests for auth and normalization in `tests/unit/auth-service.test.js` and `tests/unit/normalization-service.test.js`
+- [X] T023 Validate quickstart and command flow in `specs/001-social-data-hub/quickstart.md` and `package.json`
 
 ---
 

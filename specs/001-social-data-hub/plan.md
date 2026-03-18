@@ -1,6 +1,6 @@
 # Implementation Plan: 社群行銷資料中台
 
-**Branch**: `001-social-data-hub` | **Date**: 2026-03-18 | **Spec**: [/Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/specs/001-social-data-hub/spec.md](/Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/specs/001-social-data-hub/spec.md)
+**Branch**: `001-social-data-hub` | **Date**: 2026-03-18 | **Spec**: [`specs/001-social-data-hub/spec.md`](spec.md)
 **Input**: Feature specification from `/specs/001-social-data-hub/spec.md`
 
 ## Summary
@@ -23,7 +23,7 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-目前 `/Users/hjc/CodeSpace/Social-Media-Fetcher_spec-kit/.specify/memory/constitution.md` 仍為模板，沒有已生效的專案原則或 gate 條文，因此本 feature 以 `spec.md` 的功能需求與本次設計文件作為唯一約束來源。Phase 1 設計後重新檢查，仍無額外憲章衝突。
+目前 `.specify/memory/constitution.md` 仍為模板，沒有已生效的專案原則或 gate 條文，因此本 feature 以 `spec.md` 的功能需求與本次設計文件作為唯一約束來源。Phase 1 設計後重新檢查，仍無額外憲章衝突。
 
 ## Project Structure
 

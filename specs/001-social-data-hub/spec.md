@@ -83,6 +83,9 @@
 - **FR-018**: 系統 MUST 讓排程同步與手動刷新共用一致的資料整理與輸出規則，避免同一帳號在不同觸發方式下產出不一致結果。
 - **FR-019**: 系統 MUST 將 token 管理、核心 API 呼叫、資料標準化、商業邏輯運算與工作控制保留在 Server，不可依賴 Google Sheet 或 Apps Script 作為最終執行核心。
 - **FR-020**: 系統 MUST 在單一帳號或單一平台失敗時隔離影響範圍，不得因個別失敗導致其他已成功的帳號結果一併失效。
+- **FR-021**: 所有前端介面 MUST 被視為非可信薄客戶端，不得在前端持久保存第三方平台 access token、refresh token 或同等敏感授權資料。
+- **FR-022**: 所有第三方平台 API 呼叫 MUST 由 Server 代表前端執行；前端不得直接持有呼叫第三方平台 API 所需的憑證或發送該類請求。
+- **FR-023**: 前端 MAY 提交操作意圖或草稿資料，但 MUST NOT 直接決定最終資料寫入內容；最終驗證、標準化、持久化與狀態裁決必須由 Server 完成。
 
 ### Key Entities *(include if feature involves data)*
 
@@ -99,6 +102,7 @@
 - Google Sheet 的一列對應一個可刷新的平台帳號設定。
 - 首波支援平台以 Instagram、Facebook、TikTok 為主，後續可延用相同資料流與狀態模型擴充其他平台。
 - Google Sheet 顯示的是整理後、適合閱讀與協作的輸出資料，不承擔 raw data 主儲存職責。
+- 未來若加入 Web 前端或其他操作介面，也只視為受限入口，不承擔 token 保管、第三方 API 整合或最終資料落庫權限。
 - raw data 保留期限、標準化欄位完整字典與實際同步排程頻率將在後續設計階段細化，不影響本功能的需求邊界。
 
 ## Success Criteria *(mandatory)*
