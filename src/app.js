@@ -62,7 +62,7 @@ async function recoverJobs({
 
   const queuedJobs = await jobRepository.listByStatuses(["queued"]);
   for (const job of queuedJobs) {
-    await jobQueue.enqueue(job);
+    jobQueue.enqueue(job);
   }
 }
 

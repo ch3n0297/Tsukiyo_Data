@@ -60,3 +60,26 @@ test("request handler converts unexpected dispatch errors into 500 responses", a
     await cleanup();
   }
 });
+
+test("JSON API responses include X-Content-Type-Options nosniff header", async () => {
+  const accounts = [createAccount({ platform: "instagram", accountId: "ig-header-1" })];
+  const fixtures = {
+    "instagram--ig-header-1.json": { items: [] },
+  };
+  const { cleanup, baseUrl } = await setupTestApp({ accounts, fixtures });
+
+  try {
+    const healthResponse = await fetch(`${baseUrl}/health`);
+    assert.equal(healthResponse.headers.get("x-content-type-options"), "nosniff");
+    assert.match(healthResponse.headers.get("content-type"), /application\/json/);
+
+    const accountsResponse = await fetch(`${baseUrl}/api/v1/ui/accounts`);
+    assert.equal(accountsResponse.headers.get("x-content-type-options"), "nosniff");
+    assert.match(accountsResponse.headers.get("content-type"), /application\/json/);
+
+    const notFoundResponse = await fetch(`${baseUrl}/api/v1/unknown-route`);
+    assert.equal(notFoundResponse.headers.get("x-content-type-options"), "nosniff");
+  } finally {
+    await cleanup();
+  }
+});

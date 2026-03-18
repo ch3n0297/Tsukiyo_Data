@@ -18,7 +18,7 @@ export function createQueuedJob({
     requestSource,
     refreshDays,
     status: "queued",
-    systemMessage: "Job queued for background processing.",
+    systemMessage: "已受理工作，等待背景執行。",
     queuedAt: clock().toISOString(),
     startedAt: null,
     finishedAt: null,

@@ -47,6 +47,7 @@ export function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
     "content-type": "application/json; charset=utf-8",
     "content-length": Buffer.byteLength(body),
+    "x-content-type-options": "nosniff",
   });
   res.end(body);
 }

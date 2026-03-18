@@ -63,7 +63,7 @@ export class ScheduledSyncService {
 
       await this.jobRepository.create(job);
       await this.statusService.markQueued(accountConfig, job, "已排入排程同步工作。");
-      await this.jobQueue.enqueue(job);
+      this.jobQueue.enqueue(job);
       acceptedJobs.push(job.id);
     }
 

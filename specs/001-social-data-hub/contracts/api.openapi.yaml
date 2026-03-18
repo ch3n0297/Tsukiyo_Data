@@ -106,6 +106,200 @@ components:
                 type: string
               reason:
                 type: string
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - queue
+        - scheduler
+        - now
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        queue:
+          type: object
+          required:
+            - pending
+            - running
+            - concurrency
+          properties:
+            pending:
+              type: integer
+            running:
+              type: integer
+            concurrency:
+              type: integer
+        scheduler:
+          type: object
+          required:
+            - running
+            - intervalMs
+            - tickInProgress
+          properties:
+            running:
+              type: boolean
+            intervalMs:
+              type: integer
+            tickInProgress:
+              type: boolean
+        now:
+          type: string
+          format: date-time
+    UiCapabilities:
+      type: object
+      required:
+        - mode
+        - manualRefresh
+        - scheduledSync
+        - reason
+      properties:
+        mode:
+          type: string
+        manualRefresh:
+          type: boolean
+        scheduledSync:
+          type: boolean
+        reason:
+          type: string
+    LatestOutputSummary:
+      type: object
+      properties:
+        syncedAt:
+          type: string
+          format: date-time
+          nullable: true
+        rowCount:
+          type: integer
+    OutputRow:
+      type: object
+      properties:
+        content_id:
+          type: string
+        content_type:
+          type: string
+        published_at:
+          type: string
+        caption:
+          type: string
+        url:
+          type: string
+        views:
+          type: integer
+        likes:
+          type: integer
+        comments:
+          type: integer
+        shares:
+          type: integer
+        data_status:
+          type: string
+    UiAccount:
+      type: object
+      required:
+        - id
+        - accountKey
+        - clientName
+        - platform
+        - accountId
+        - refreshDays
+        - isActive
+        - refreshStatus
+      properties:
+        id:
+          type: string
+        accountKey:
+          type: string
+        clientName:
+          type: string
+        platform:
+          type: string
+          enum: [instagram, facebook, tiktok]
+        accountId:
+          type: string
+        refreshDays:
+          type: integer
+        isActive:
+          type: boolean
+        sheetId:
+          type: string
+          nullable: true
+        sheetRowKey:
+          type: string
+          nullable: true
+        refreshStatus:
+          type: string
+          enum: [idle, queued, running, success, error]
+        systemMessage:
+          type: string
+          nullable: true
+        lastRequestTime:
+          type: string
+          format: date-time
+          nullable: true
+        lastSuccessTime:
+          type: string
+          format: date-time
+          nullable: true
+        currentJobId:
+          type: string
+          nullable: true
+        statusUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        latestOutput:
+          $ref: '#/components/schemas/LatestOutputSummary'
+          nullable: true
+    UiAccountDetail:
+      allOf:
+        - $ref: '#/components/schemas/UiAccount'
+        - type: object
+          properties:
+            latestOutput:
+              type: object
+              nullable: true
+              properties:
+                syncedAt:
+                  type: string
+                  format: date-time
+                  nullable: true
+                rowCount:
+                  type: integer
+                rows:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/OutputRow'
+    UiAccountsListResponse:
+      type: object
+      required:
+        - generatedAt
+        - capabilities
+        - accounts
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        capabilities:
+          $ref: '#/components/schemas/UiCapabilities'
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiAccount'
+    UiAccountDetailResponse:
+      type: object
+      required:
+        - generatedAt
+        - capabilities
+        - account
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        capabilities:
+          $ref: '#/components/schemas/UiCapabilities'
+        account:
+          $ref: '#/components/schemas/UiAccountDetail'
 paths:
   /health:
     get:
@@ -113,6 +307,63 @@ paths:
       responses:
         '200':
           description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/v1/ui/accounts:
+    get:
+      summary: 列出所有帳號的儀表板摘要
+      description: >
+        回傳所有帳號設定與對應的最新狀態快照，供儀表板唯讀展示使用。
+        不需要身份驗證，但不含任何敏感憑證資料。
+      responses:
+        '200':
+          description: 帳號列表與儀表板能力描述
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UiAccountsListResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/ui/accounts/{platform}/{accountId}:
+    get:
+      summary: 取得單一帳號的詳細資料（含輸出列）
+      parameters:
+        - name: platform
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [instagram, facebook, tiktok]
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 帳號詳細資料（含最新輸出列）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UiAccountDetailResponse'
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/refresh-jobs/manual:
     post:
       summary: 送出單一帳號手動刷新
@@ -153,8 +404,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '429':
           description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
           content:
             application/json:
               schema:
@@ -181,8 +444,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ScheduledSyncAccepted'
+        '400':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Signature validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
           content:
             application/json:
               schema:
