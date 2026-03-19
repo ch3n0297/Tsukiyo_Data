@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getAccountDetail } from "../api/dashboardApi.js";
 
-export function useSelectedAccount(accounts, refreshToken) {
+export function useSelectedAccount(accounts, refreshToken, enabled) {
   const abortControllerRef = useRef(null);
   const [selectedAccountKey, setSelectedAccountKey] = useState(null);
   const [selectedAccount, setSelectedAccount] = useState(null);
@@ -9,6 +9,15 @@ export function useSelectedAccount(accounts, refreshToken) {
   const [detailError, setDetailError] = useState("");
 
   useEffect(() => {
+    if (!enabled) {
+      abortControllerRef.current?.abort();
+      setSelectedAccountKey(null);
+      setSelectedAccount(null);
+      setIsDetailLoading(false);
+      setDetailError("");
+      return;
+    }
+
     if (accounts.length === 0) {
       abortControllerRef.current?.abort();
       setSelectedAccountKey(null);
@@ -23,7 +32,7 @@ export function useSelectedAccount(accounts, refreshToken) {
     if (!hasSelectedAccount) {
       setSelectedAccountKey(accounts[0].accountKey);
     }
-  }, [accounts, selectedAccountKey]);
+  }, [accounts, enabled, selectedAccountKey]);
 
   const selectedSummary = useMemo(
     () => accounts.find((account) => account.accountKey === selectedAccountKey) ?? null,
@@ -33,7 +42,7 @@ export function useSelectedAccount(accounts, refreshToken) {
   useEffect(() => {
     abortControllerRef.current?.abort();
 
-    if (!selectedSummary) {
+    if (!enabled || !selectedSummary) {
       setSelectedAccount(null);
       setIsDetailLoading(false);
       setDetailError("");
@@ -76,7 +85,7 @@ export function useSelectedAccount(accounts, refreshToken) {
     return () => {
       controller.abort();
     };
-  }, [refreshToken, selectedSummary?.accountId, selectedSummary?.accountKey, selectedSummary?.platform]);
+  }, [enabled, refreshToken, selectedSummary?.accountId, selectedSummary?.accountKey, selectedSummary?.platform]);
 
   return {
     detailError,

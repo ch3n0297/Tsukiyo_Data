@@ -7,11 +7,16 @@ export class HttpRequestError extends Error {
   }
 }
 
-export async function requestJson(url, { signal } = {}) {
+export async function requestJson(url, { body, headers, method = "GET", signal } = {}) {
   const response = await fetch(url, {
+    body: body === undefined ? undefined : JSON.stringify(body),
+    credentials: "include",
     headers: {
       accept: "application/json",
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...headers,
     },
+    method,
     signal,
   });
 

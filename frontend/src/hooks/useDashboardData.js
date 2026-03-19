@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getHealth, listAccounts } from "../api/dashboardApi.js";
 
-export function useDashboardData() {
+export function useDashboardData({ enabled }) {
   const abortControllerRef = useRef(null);
   const [health, setHealth] = useState(null);
   const [accounts, setAccounts] = useState([]);
@@ -12,6 +12,17 @@ export function useDashboardData() {
   const [refreshToken, setRefreshToken] = useState(0);
 
   const refreshDashboard = useCallback(async ({ silent = false } = {}) => {
+    if (!enabled) {
+      abortControllerRef.current?.abort();
+      setHealth(null);
+      setAccounts([]);
+      setCapabilities(null);
+      setError("");
+      setIsLoading(false);
+      setLastUpdated(null);
+      return;
+    }
+
     abortControllerRef.current?.abort();
 
     const controller = new AbortController();
@@ -52,15 +63,26 @@ export function useDashboardData() {
         setIsLoading(false);
       }
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) {
+      abortControllerRef.current?.abort();
+      setHealth(null);
+      setAccounts([]);
+      setCapabilities(null);
+      setError("");
+      setIsLoading(false);
+      setLastUpdated(null);
+      return undefined;
+    }
+
     void refreshDashboard();
 
     return () => {
       abortControllerRef.current?.abort();
     };
-  }, [refreshDashboard]);
+  }, [enabled, refreshDashboard]);
 
   return {
     accounts,

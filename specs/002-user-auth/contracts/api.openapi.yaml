@@ -1,0 +1,32 @@
+openapi: 3.1.0
+info:
+  title: Social Data Hub Auth API
+  version: 0.1.0
+paths:
+  /api/v1/auth/register:
+    post:
+      summary: 註冊新帳號
+  /api/v1/auth/login:
+    post:
+      summary: 使用 Email/密碼登入
+  /api/v1/auth/logout:
+    post:
+      summary: 登出目前 session
+  /api/v1/auth/me:
+    get:
+      summary: 取得目前登入使用者
+  /api/v1/auth/forgot-password:
+    post:
+      summary: 送出忘記密碼申請
+  /api/v1/auth/reset-password:
+    post:
+      summary: 使用 reset token 重設密碼
+  /api/v1/admin/pending-users:
+    get:
+      summary: 列出待審核使用者
+  /api/v1/admin/pending-users/{userId}/approve:
+    post:
+      summary: 核准待審核使用者
+  /api/v1/admin/pending-users/{userId}/reject:
+    post:
+      summary: 拒絕待審核使用者

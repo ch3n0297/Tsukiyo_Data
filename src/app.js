@@ -7,9 +7,24 @@ import { FileStore } from "./lib/fs-store.js";
 import { sendJson } from "./lib/http.js";
 import { AccountConfigRepository } from "./repositories/account-config-repository.js";
 import { JobRepository } from "./repositories/job-repository.js";
+import { OutboxMessageRepository } from "./repositories/outbox-message-repository.js";
 import { NormalizedRecordRepository } from "./repositories/normalized-record-repository.js";
+import { PasswordResetTokenRepository } from "./repositories/password-reset-token-repository.js";
 import { RawRecordRepository } from "./repositories/raw-record-repository.js";
 import { SheetSnapshotRepository } from "./repositories/sheet-snapshot-repository.js";
+import { SessionRepository } from "./repositories/session-repository.js";
+import { UserRepository } from "./repositories/user-repository.js";
+import {
+  handleApproveUserRoute,
+  handleCurrentUserRoute,
+  handleForgotPasswordRoute,
+  handleLoginRoute,
+  handleLogoutRoute,
+  handlePendingUsersRoute,
+  handleRegisterRoute,
+  handleRejectUserRoute,
+  handleResetPasswordRoute,
+} from "./routes/auth-routes.js";
 import { handleHealthRoute } from "./routes/health-route.js";
 import { handleInternalScheduledSyncRoute } from "./routes/internal-scheduled-sync-route.js";
 import { handleManualRefreshRoute } from "./routes/manual-refresh-route.js";
@@ -19,11 +34,14 @@ import { seedDemoData } from "./cli/seed-demo.js";
 import { JobQueue } from "./services/job-queue.js";
 import { ManualRefreshService } from "./services/manual-refresh-service.js";
 import { createNormalizationService } from "./services/normalization-service.js";
+import { PasswordResetService } from "./services/password-reset-service.js";
 import { RefreshOrchestrator } from "./services/refresh-orchestrator.js";
 import { ScheduledSyncService } from "./services/scheduled-sync-service.js";
 import { SchedulerService } from "./services/scheduler-service.js";
 import { StatusService } from "./services/status-service.js";
 import { UiDashboardService } from "./services/ui-dashboard-service.js";
+import { UserApprovalService } from "./services/user-approval-service.js";
+import { UserAuthService } from "./services/user-auth-service.js";
 
 async function recoverJobs({
   accountRepository,
@@ -73,18 +91,26 @@ export async function createApp(overrides = {}) {
   await store.init([
     "account-configs",
     "jobs",
+    "outbox-messages",
+    "password-reset-tokens",
     "raw-platform-records",
     "normalized-content-records",
+    "sessions",
     "sheet-status",
     "sheet-output",
+    "users",
   ]);
 
   const repositories = {
     accountRepository: new AccountConfigRepository(store),
     jobRepository: new JobRepository(store),
+    outboxMessageRepository: new OutboxMessageRepository(store),
     rawRecordRepository: new RawRecordRepository(store),
     normalizedRecordRepository: new NormalizedRecordRepository(store),
+    passwordResetTokenRepository: new PasswordResetTokenRepository(store),
     sheetSnapshotRepository: new SheetSnapshotRepository(store),
+    sessionRepository: new SessionRepository(store),
+    userRepository: new UserRepository(store),
   };
 
   if (config.seedDemoData) {
@@ -142,12 +168,32 @@ export async function createApp(overrides = {}) {
     intervalMs: config.scheduleIntervalMs,
     logger: config.logger,
   });
+  const userAuthService = new UserAuthService({
+    userRepository: repositories.userRepository,
+    sessionRepository: repositories.sessionRepository,
+    clock: config.clock,
+    config,
+  });
+  const userApprovalService = new UserApprovalService({
+    userRepository: repositories.userRepository,
+    outboxMessageRepository: repositories.outboxMessageRepository,
+    clock: config.clock,
+  });
+  const passwordResetService = new PasswordResetService({
+    userRepository: repositories.userRepository,
+    sessionRepository: repositories.sessionRepository,
+    passwordResetTokenRepository: repositories.passwordResetTokenRepository,
+    outboxMessageRepository: repositories.outboxMessageRepository,
+    clock: config.clock,
+    config,
+  });
   const uiDashboardService = new UiDashboardService({
     accountRepository: repositories.accountRepository,
     sheetSnapshotRepository: repositories.sheetSnapshotRepository,
     clock: config.clock,
   });
 
+  await userAuthService.seedBootstrapAdmin();
   await statusService.bootstrapAccountSnapshots();
   await recoverJobs({
     accountRepository: repositories.accountRepository,
@@ -166,9 +212,16 @@ export async function createApp(overrides = {}) {
     refreshOrchestrator,
     jobQueue,
     manualRefreshService,
+    outboxMessageRepository: repositories.outboxMessageRepository,
+    passwordResetService,
+    passwordResetTokenRepository: repositories.passwordResetTokenRepository,
     scheduledSyncService,
     schedulerService,
+    sessionRepository: repositories.sessionRepository,
     uiDashboardService,
+    userApprovalService,
+    userAuthService,
+    userRepository: repositories.userRepository,
   };
 
   const server = http.createServer(async (req, res) => {
@@ -189,7 +242,7 @@ export async function createApp(overrides = {}) {
       }
 
       if (key === "GET /api/v1/ui/accounts") {
-        await handleUiAccountsRoute({ res, services });
+        await handleUiAccountsRoute({ req, res, services });
         return;
       }
 
@@ -198,11 +251,77 @@ export async function createApp(overrides = {}) {
 
         if (accountDetailMatch) {
           await handleUiAccountDetailRoute({
+            req,
             res,
             services,
             params: {
               platform: decodeURIComponent(accountDetailMatch[1]),
               accountId: decodeURIComponent(accountDetailMatch[2]),
+            },
+          });
+          return;
+        }
+      }
+
+      if (key === "POST /api/v1/auth/register") {
+        await handleRegisterRoute({ req, res, services, config });
+        return;
+      }
+
+      if (key === "POST /api/v1/auth/login") {
+        await handleLoginRoute({ req, res, services, config });
+        return;
+      }
+
+      if (key === "POST /api/v1/auth/logout") {
+        await handleLogoutRoute({ req, res, services });
+        return;
+      }
+
+      if (key === "GET /api/v1/auth/me") {
+        await handleCurrentUserRoute({ req, res, services });
+        return;
+      }
+
+      if (key === "POST /api/v1/auth/forgot-password") {
+        await handleForgotPasswordRoute({ req, res, services, config });
+        return;
+      }
+
+      if (key === "POST /api/v1/auth/reset-password") {
+        await handleResetPasswordRoute({ req, res, services, config });
+        return;
+      }
+
+      if (key === "GET /api/v1/admin/pending-users") {
+        await handlePendingUsersRoute({ req, res, services });
+        return;
+      }
+
+      if (req.method === "POST") {
+        const approveUserMatch = url.pathname.match(/^\/api\/v1\/admin\/pending-users\/([^/]+)\/approve$/);
+
+        if (approveUserMatch) {
+          await handleApproveUserRoute({
+            req,
+            res,
+            services,
+            params: {
+              userId: decodeURIComponent(approveUserMatch[1]),
+            },
+          });
+          return;
+        }
+
+        const rejectUserMatch = url.pathname.match(/^\/api\/v1\/admin\/pending-users\/([^/]+)\/reject$/);
+
+        if (rejectUserMatch) {
+          await handleRejectUserRoute({
+            req,
+            res,
+            services,
+            params: {
+              userId: decodeURIComponent(rejectUserMatch[1]),
             },
           });
           return;

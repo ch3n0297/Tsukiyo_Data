@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createAccount,
+  loginAsAdmin,
+  sendJsonRequest,
   sendSignedJson,
   setupTestApp,
 } from "../../test-support/support.js";
@@ -41,7 +43,7 @@ test("frontend dashboard assets are accessible without exposing protected write 
 
       if (assetPath.endsWith(".js")) {
         assert.match(assetResponse.headers.get("content-type"), /javascript/i);
-        jsAssetContainsReadApi ||= /api\/v1\/ui\/accounts/.test(assetBody);
+        jsAssetContainsReadApi ||= /api\/v1\/auth\/login/.test(assetBody);
         assert.doesNotMatch(assetBody, /local-dev-secret/);
         assert.doesNotMatch(assetBody, /refresh-jobs\/manual/);
         assert.doesNotMatch(assetBody, /internal\/scheduled-sync/);
@@ -89,6 +91,10 @@ test("ui read APIs expose aggregated account snapshots and latest output rows", 
   const { app, cleanup, baseUrl } = await setupTestApp({ accounts, fixtures });
 
   try {
+    const adminLogin = await loginAsAdmin(baseUrl);
+    assert.equal(adminLogin.response.status, 200);
+    assert.ok(adminLogin.cookie);
+
     const queued = await sendSignedJson({
       baseUrl,
       pathName: "/api/v1/refresh-jobs/manual",
@@ -103,7 +109,11 @@ test("ui read APIs expose aggregated account snapshots and latest output rows", 
     assert.equal(queued.response.status, 202);
     await app.services.jobQueue.waitForIdle();
 
-    const accountsResponse = await fetch(`${baseUrl}/api/v1/ui/accounts`);
+    const accountsResponse = await fetch(`${baseUrl}/api/v1/ui/accounts`, {
+      headers: {
+        cookie: adminLogin.cookie,
+      },
+    });
     const accountsJson = await accountsResponse.json();
 
     assert.equal(accountsResponse.status, 200);
@@ -119,7 +129,11 @@ test("ui read APIs expose aggregated account snapshots and latest output rows", 
     assert.equal(instagramAccount.latestOutput.rowCount, 1);
     assert.ok(instagramAccount.latestOutput.syncedAt);
 
-    const detailResponse = await fetch(`${baseUrl}/api/v1/ui/accounts/instagram/ig-ui-1`);
+    const detailResponse = await fetch(`${baseUrl}/api/v1/ui/accounts/instagram/ig-ui-1`, {
+      headers: {
+        cookie: adminLogin.cookie,
+      },
+    });
     const detailJson = await detailResponse.json();
 
     assert.equal(detailResponse.status, 200);
@@ -160,8 +174,67 @@ test("frontend does not bypass existing manual refresh protection", async () => 
 
     const accountsResponse = await fetch(`${baseUrl}/api/v1/ui/accounts`);
     const accountsJson = await accountsResponse.json();
-    assert.equal(accountsResponse.status, 200);
-    assert.equal(accountsJson.capabilities.manualRefresh, false);
+    assert.equal(accountsResponse.status, 401);
+    assert.equal(accountsJson.error, "AUTH_REQUIRED");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("admin can review pending users through protected browser APIs", async () => {
+  const { cleanup, baseUrl } = await setupTestApp({
+    accounts: [createAccount({ platform: "instagram", accountId: "ig-auth-1" })],
+    fixtures: {
+      "instagram--ig-auth-1.json": { items: [] },
+    },
+  });
+
+  try {
+    const register = await sendJsonRequest({
+      baseUrl,
+      pathName: "/api/v1/auth/register",
+      body: {
+        display_name: "待審成員",
+        email: "member@example.com",
+        password: "MemberPassword123!",
+      },
+    });
+    assert.equal(register.response.status, 201);
+
+    const adminLogin = await loginAsAdmin(baseUrl);
+    assert.equal(adminLogin.response.status, 200);
+
+    const pendingBefore = await fetch(`${baseUrl}/api/v1/admin/pending-users`, {
+      headers: {
+        cookie: adminLogin.cookie,
+      },
+    });
+    const pendingBeforeJson = await pendingBefore.json();
+    assert.equal(pendingBefore.status, 200);
+    assert.equal(pendingBeforeJson.users.length, 1);
+
+    const approve = await fetch(
+      `${baseUrl}/api/v1/admin/pending-users/${pendingBeforeJson.users[0].id}/approve`,
+      {
+        method: "POST",
+        headers: {
+          cookie: adminLogin.cookie,
+        },
+      },
+    );
+    const approveJson = await approve.json();
+    assert.equal(approve.status, 200);
+    assert.equal(approveJson.user.status, "active");
+
+    const memberLogin = await sendJsonRequest({
+      baseUrl,
+      pathName: "/api/v1/auth/login",
+      body: {
+        email: "member@example.com",
+        password: "MemberPassword123!",
+      },
+    });
+    assert.equal(memberLogin.response.status, 200);
   } finally {
     await cleanup();
   }

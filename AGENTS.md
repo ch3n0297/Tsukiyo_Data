@@ -27,6 +27,11 @@ Node.js 24, ESM JavaScript: Follow standard conventions
 - 001-social-data-hub: Added Node.js 24, ESM JavaScript + 無外部 runtime dependency，使用 Node 標準函式庫 (`http`, `crypto`, `fs/promises`, `timers`, `node:test`)
 
 <!-- MANUAL ADDITIONS START -->
+## Branch Naming
+
+- 功能開發分支一律使用 GitHub 慣例命名，採 `feat/*` 形式，例如 `feat/user-auth`。
+- 修復類型分支應使用 `fix/*`，文件類型分支應使用 `docs/*`；避免再使用無前綴的自訂命名。
+
 ## Frontend Security Boundary
 
 - Frontend 僅作為受限操作與展示介面，不得保存任何第三方平台 access token 或 refresh token。

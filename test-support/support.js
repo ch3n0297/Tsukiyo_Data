@@ -56,6 +56,9 @@ export async function setupTestApp({
     seedDemoData: false,
     autoStartScheduler: false,
     sharedSecret: "local-dev-secret",
+    bootstrapAdminEmail: "admin@example.com",
+    bootstrapAdminPassword: "AdminPassword123!",
+    bootstrapAdminName: "測試管理員",
     logger: createLogger({ silent: true }),
     clock: () => new Date(now),
     ...overrides,
@@ -106,6 +109,52 @@ export async function sendSignedJson({
 
   const json = await response.json();
   return { response, json };
+}
+
+export async function sendJsonRequest({
+  baseUrl,
+  pathName,
+  method = "POST",
+  body,
+  cookie,
+}) {
+  const response = await fetch(`${baseUrl}${pathName}`, {
+    method,
+    headers: {
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...(cookie ? { cookie } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const json = await response.json().catch(() => ({}));
+  return { response, json };
+}
+
+export function readSessionCookie(response) {
+  const setCookie = response.headers.get("set-cookie");
+
+  if (!setCookie) {
+    return null;
+  }
+
+  return setCookie.split(";")[0];
+}
+
+export async function loginAsAdmin(baseUrl, credentials = {}) {
+  const { response, json } = await sendJsonRequest({
+    baseUrl,
+    pathName: "/api/v1/auth/login",
+    body: {
+      email: credentials.email ?? "admin@example.com",
+      password: credentials.password ?? "AdminPassword123!",
+    },
+  });
+
+  return {
+    cookie: readSessionCookie(response),
+    json,
+    response,
+  };
 }
 
 export async function readStoreFile(app, filename) {

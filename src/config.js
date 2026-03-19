@@ -6,6 +6,24 @@ function readNumber(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function readBoolean(value, fallback = false) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
+}
+
 function readTrimmedString(value) {
   if (typeof value !== "string") {
     return undefined;
@@ -77,6 +95,27 @@ export function loadConfig(overrides = {}) {
     maxRequestBodyBytes:
       overrides.maxRequestBodyBytes ??
       readNumber(process.env.MAX_REQUEST_BODY_BYTES, 1024 * 1024),
+    sessionCookieName:
+      overrides.sessionCookieName ??
+      readTrimmedString(process.env.SESSION_COOKIE_NAME) ??
+      "social_data_session",
+    sessionTtlMs:
+      overrides.sessionTtlMs ?? readNumber(process.env.SESSION_TTL_MS, 7 * 24 * 60 * 60 * 1000),
+    sessionCookieSecure:
+      overrides.sessionCookieSecure ?? readBoolean(process.env.SESSION_COOKIE_SECURE, false),
+    passwordResetTtlMs:
+      overrides.passwordResetTtlMs ??
+      readNumber(process.env.PASSWORD_RESET_TTL_MS, 60 * 60 * 1000),
+    bootstrapAdminEmail:
+      overrides.bootstrapAdminEmail ?? readTrimmedString(process.env.BOOTSTRAP_ADMIN_EMAIL),
+    bootstrapAdminPassword:
+      overrides.bootstrapAdminPassword ?? readTrimmedString(process.env.BOOTSTRAP_ADMIN_PASSWORD),
+    bootstrapAdminName:
+      overrides.bootstrapAdminName ??
+      readTrimmedString(process.env.BOOTSTRAP_ADMIN_NAME) ??
+      "系統管理員",
+    publicAppOrigin:
+      overrides.publicAppOrigin ?? readTrimmedString(process.env.PUBLIC_APP_ORIGIN),
     maxConcurrentJobs:
       overrides.maxConcurrentJobs ?? readNumber(process.env.MAX_CONCURRENT_JOBS, 3),
     sourceRateLimitWindowMs:

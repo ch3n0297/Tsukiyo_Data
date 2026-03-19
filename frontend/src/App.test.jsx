@@ -14,10 +14,71 @@ function createJsonResponse(status, payload) {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  window.history.replaceState({}, "", "/");
 });
 
-test("renders dashboard data from read-only UI APIs and supports manual refresh", async () => {
-  const fetchMock = vi.fn(async (url) => {
+test("renders login screen when there is no active session", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url) => {
+      if (url === "/api/v1/auth/me") {
+        return createJsonResponse(401, {
+          error: "AUTH_REQUIRED",
+          system_message: "請先登入後再存取此功能。",
+        });
+      }
+
+      return createJsonResponse(404, {
+        error: "NOT_FOUND",
+        system_message: `Unexpected request: ${url}`,
+      });
+    }),
+  );
+
+  render(<App />);
+
+  await screen.findByRole("heading", { name: "登入" });
+  expect(screen.getByRole("button", { name: "註冊新帳號" })).toBeInTheDocument();
+});
+
+test("renders dashboard data for an authenticated admin and supports pending-user approval", async () => {
+  const fetchMock = vi.fn(async (url, options = {}) => {
+    if (url === "/api/v1/auth/me") {
+      return createJsonResponse(200, {
+        user: {
+          id: "user-admin",
+          email: "admin@example.com",
+          displayName: "管理員",
+          role: "admin",
+          status: "active",
+          approvedAt: "2026-03-18T00:00:00.000Z",
+          approvedBy: "bootstrap-admin",
+          lastLoginAt: "2026-03-18T00:00:00.000Z",
+          createdAt: "2026-03-18T00:00:00.000Z",
+          updatedAt: "2026-03-18T00:00:00.000Z",
+        },
+      });
+    }
+
+    if (url === "/api/v1/admin/pending-users") {
+      return createJsonResponse(200, {
+        users: [
+          {
+            id: "user-pending-1",
+            email: "pending@example.com",
+            displayName: "待審使用者",
+            role: "member",
+            status: "pending",
+            approvedAt: null,
+            approvedBy: null,
+            lastLoginAt: null,
+            createdAt: "2026-03-18T00:00:00.000Z",
+            updatedAt: "2026-03-18T00:00:00.000Z",
+          },
+        ],
+      });
+    }
+
     if (url === "/health") {
       return createJsonResponse(200, {
         now: "2026-03-18T00:00:00.000Z",
@@ -49,7 +110,7 @@ test("renders dashboard data from read-only UI APIs and supports manual refresh"
           {
             accountId: "acct-instagram-demo",
             accountKey: "instagram:acct-instagram-demo",
-            clientName: "Test Client",
+            clientName: "示範客戶",
             currentJobId: null,
             id: "instagram-acct-instagram-demo",
             isActive: true,
@@ -76,7 +137,7 @@ test("renders dashboard data from read-only UI APIs and supports manual refresh"
         account: {
           accountId: "acct-instagram-demo",
           accountKey: "instagram:acct-instagram-demo",
-          clientName: "Test Client",
+          clientName: "示範客戶",
           currentJobId: null,
           id: "instagram-acct-instagram-demo",
           isActive: true,
@@ -119,6 +180,20 @@ test("renders dashboard data from read-only UI APIs and supports manual refresh"
       });
     }
 
+    if (url === "/api/v1/admin/pending-users/user-pending-1/approve") {
+      expect(options.method).toBe("POST");
+      return createJsonResponse(200, {
+        system_message: "已核准該使用者。",
+        user: {
+          id: "user-pending-1",
+          email: "pending@example.com",
+          displayName: "待審使用者",
+          role: "member",
+          status: "active",
+        },
+      });
+    }
+
     return createJsonResponse(404, {
       error: "NOT_FOUND",
       system_message: `Unexpected request: ${url}`,
@@ -129,17 +204,16 @@ test("renders dashboard data from read-only UI APIs and supports manual refresh"
 
   render(<App />);
 
-  await screen.findByText("社群資料中台儀表板");
-  await screen.findByText("服務狀態");
-  await screen.findByText("Test Client · instagram");
+  await screen.findByText("管理員 · admin");
+  await screen.findByText("待審使用者");
+  await screen.findByText("示範客戶 · instagram");
   await screen.findByText("UI snapshot item");
 
-  expect(screen.getByText(/安全邊界：/)).toBeInTheDocument();
-
-  fireEvent.click(screen.getByRole("button", { name: "重新整理" }));
+  fireEvent.click(screen.getByRole("button", { name: "核准" }));
 
   await waitFor(() => {
-    const healthCalls = fetchMock.mock.calls.filter(([url]) => url === "/health");
-    expect(healthCalls.length).toBeGreaterThanOrEqual(2);
+    expect(
+      fetchMock.mock.calls.some(([url]) => url === "/api/v1/admin/pending-users/user-pending-1/approve"),
+    ).toBe(true);
   });
 });
