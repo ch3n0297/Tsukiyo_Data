@@ -35,7 +35,7 @@ export class PasswordResetService {
     this.config = config;
   }
 
-  async requestReset({ email, origin }) {
+  async requestReset({ email }) {
     const normalizedEmail = normalizeEmailAddress(email);
     const user = await this.userRepository.findByEmail(normalizedEmail);
 
@@ -56,7 +56,7 @@ export class PasswordResetService {
       usedAt: null,
     });
 
-    const resolvedOrigin = this.config.publicAppOrigin ?? origin;
+    const resolvedOrigin = this.config.publicAppOrigin ?? "http://localhost:3000";
     const resetUrl = new URL("/reset-password", resolvedOrigin);
     resetUrl.searchParams.set("token", rawToken);
 

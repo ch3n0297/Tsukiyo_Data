@@ -1,5 +1,5 @@
 import { toErrorResponse } from "../lib/errors.js";
-import { getRequestOrigin, readJsonRequest, sendJson, setResponseCookie } from "../lib/http.js";
+import { readJsonRequest, sendJson, setResponseCookie } from "../lib/http.js";
 import {
   validateForgotPasswordPayload,
   validateLoginPayload,
@@ -80,7 +80,6 @@ export async function handleForgotPasswordRoute({ req, res, services, config }) 
 
     await services.passwordResetService.requestReset({
       email: payload.email,
-      origin: getRequestOrigin(req, config.publicAppOrigin ?? "http://127.0.0.1:3000"),
     });
 
     sendJson(res, 200, {
