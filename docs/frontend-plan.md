@@ -27,15 +27,20 @@
 
 ## 1. 目前產品與前端邊界
 
-- 目前正式的操作與展示前端其實是 Google Sheet，這點由規格明確定義，Server 才是唯一可信核心。
-- 現有 Node 服務只公開 3 個 HTTP 路由：
-  - [`handleHealthRoute()`](../src/routes/health-route.js#L3)
-  - [`handleManualRefreshRoute()`](../src/routes/manual-refresh-route.js#L5)
-  - [`handleInternalScheduledSyncRoute()`](../src/routes/internal-scheduled-sync-route.js#L6)
+- 操作與展示前端為 React Dashboard（內部操作台），Google Sheet 為客戶報表展示端（由 Server 直接回寫）。
+- Server 是唯一可信核心。
+- 現有 Node 服務公開多個 HTTP 路由，包含：
+  - 健康檢查 [`GET /health`]
+  - 帳號列表 [`GET /api/v1/ui/accounts`]
+  - 帳號詳情 [`GET /api/v1/ui/accounts/:platform/:accountId`]
+  - 手動刷新 [`POST /api/v1/refresh-jobs/manual`]（HMAC 認證）
+  - 排程同步 [`POST /api/v1/internal/scheduled-sync`]（HMAC 認證）
+  - 用戶認證（register / login / logout / me / forgot-password / reset-password）
+  - 管理員功能（pending-users / approve / reject）
 - 現有後端已經保存前端最需要的兩類資料：
-  - 帳號狀態快照，由 [`StatusService`](../src/services/status-service.js) 寫入 [`sheet-status`](../data/)
-  - 整理後內容輸出，由 [`FileSheetGateway`](../src/adapters/sheets/file-sheet-gateway.js) 寫入 [`sheet-output`](../data/)
-- 但目前沒有提供瀏覽器可直接使用的讀取 API，也沒有靜態檔案服務或 browser-safe 驗證方式。
+  - 帳號狀態快照，由 `StatusService` 寫入 `sheet-status`
+  - 整理後內容輸出，由 `FileSheetGateway` 寫入 `sheet-output`
+- Dashboard 透過 Session Cookie 認證存取 API，手動刷新功能透過後端代理呼叫。
 
 ## 2. 最小可行前端形態
 
@@ -330,9 +335,10 @@ flowchart LR
    - 手動刷新接受後，只能靠帳號狀態快照間接觀察進度
    - 若前端要顯示更完整的 job lifecycle，需補 job query API
 
-5. **系統仍以 Google Sheet 為主要操作介面**
-   - 規格明定 Google Sheet 是操作與展示入口
-   - 因此 web 前端在首階段較適合作為內部輔助儀表板，而不是直接取代全部操作流程
+5. **系統仍以 React Dashboard 為主要操作介面，Google Sheet 為客戶報表展示端**
+   - React Dashboard 是操作與展示入口
+   - Google Sheet 由 Server 透過 Google Sheets API 直接回寫資料，供客戶查看
+   - 不使用 Apps Script
 
 6. **目前佇列與部分限流狀態為 in-memory**
    - [`JobQueue`](../src/services/job-queue.js) 與 [`ManualRefreshService`](../src/services/manual-refresh-service.js) 的部分執行中狀態依賴單機記憶體

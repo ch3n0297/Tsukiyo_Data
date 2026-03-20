@@ -14,7 +14,7 @@
 
 一句話總結：
 
-> **Server 是資料真實來源與執行核心，Google Sheet 是操作台與展示端。**
+> **Server 是資料真實來源與執行核心，React Dashboard 是內部操作台，Google Sheet 是客戶報表展示端。**
 
 ---
 
@@ -39,9 +39,8 @@ Google Sheet 仍然保留，原因是：
 Google Sheet 應扮演的是：
 
 - 查看資料
-- 送出刷新請求
-- 顯示系統狀態
-- 作為客戶的使用介面
+- 作為客戶的報表介面
+- 顯示系統狀態與結果（由 Server 回寫）
 
 ### 2.2 Server 為唯一可信核心
 
@@ -57,18 +56,19 @@ Server 應負責：
 - rate limit 與防呆
 - 寫回資料與狀態
 
-### 2.3 Apps Script 為輕量控制層
+### 2.3 Google Sheets API 直接整合
 
-Apps Script 不作為系統核心，只做輕量功能：
+Server 透過 Google Cloud Service Account 直接存取 Google Sheets API，不需要 Apps Script 做中介。
 
-- 從 Google Sheet 讀取帳號設定
-- 使用者按鈕觸發後，送 request 到 Server
-- 在 Sheet 顯示狀態與訊息
-- 視需要將整理好的資料寫入指定工作表
+Server 負責：
+
+- 直接呼叫 Google Sheets API 讀寫資料
+- 任務完成後將狀態與結果回寫至 Google Sheet
+- 帳號設定管理
 
 一句話：
 
-> **Apps Script 是控制器，不是資料引擎。**
+> **Server 直接操作 Google Sheet，不經過任何中介層。**
 
 ---
 
@@ -89,12 +89,11 @@ Apps Script 不作為系統核心，只做輕量功能：
 
 ### 3.2 臨時流程（手動刷新）
 
-1. 使用者在 Google Sheet 針對單一帳號按下刷新
-2. Apps Script 讀取該列的帳號設定
-3. Apps Script 將請求送到 Server
-4. Server 驗證請求後建立 job
-5. Worker 在背景執行抓取與更新
-6. 完成後更新 DB 與 Google Sheet 狀態
+1. 使用者在 React Dashboard 選擇帳號，按下刷新按鈕
+2. Dashboard 透過後端 API 觸發手動刷新
+3. Server 驗證請求後建立 job
+4. Worker 在背景執行抓取與更新
+5. 完成後更新 DB 與 Google Sheet 狀態
 
 用途：
 
@@ -107,15 +106,15 @@ Apps Script 不作為系統核心，只做輕量功能：
 
 不建議採用：
 
-> Sheet 按一下 → Apps Script 呼叫 Server → Server 立即 call 外部 API → 等結果回來
+> 前端按一下 → 直接呼叫 Server → Server 立即 call 外部 API → 等結果回來
 
 原因如下：
 
 1. **外部 API 回應時間不穩定**
    - 社群平台 API 可能慢、失敗或暫時限制
 
-2. **Apps Script 執行時間有限**
-   - 若等待外部 API，容易超時或中斷
+2. **前端等待時間不可控**
+   - 若等待外部 API，容易超時或使用者體驗不佳
 
 3. **使用者可能連按或重複送出**
    - 會造成重複 request、浪費 quota、增加系統負擔
@@ -146,7 +145,23 @@ Queue 的核心目的不是「系統比較高級」，而是為了**可控地處
 - 保護 API quota 與 server 資源
 - 支援錯誤重試與狀態追蹤
 
-### 5.2 Queue 流程
+### 5.2 自動重試機制
+
+Queue 應支援可重試錯誤的自動重試：
+
+- 最多重試 **2-3 次**
+- 採用**指數退避**策略（例如 5 秒 → 15 秒 → 45 秒）
+- 只有**暫時性錯誤**才重試：
+  - `RATE_LIMITED`（平台 API 頻率限制）
+  - `NETWORK_ERROR`（網路連線失敗）
+  - `TIMEOUT`（請求超時）
+- **不可恢復錯誤**直接標記失敗，不重試：
+  - `TOKEN_EXPIRED`（需要人工更新 Token）
+  - `ACCOUNT_NOT_FOUND`（帳號設定已不存在）
+  - `UNSUPPORTED_PLATFORM`（不支援的平台）
+- Job 記錄中包含 `retryCount` 與 `maxRetries` 欄位
+
+### 5.3 Queue 流程
 
 第一段：**接請求**
 
@@ -213,10 +228,12 @@ Queue 的核心目的不是「系統比較高級」，而是為了**可控地處
 
 ## 7. Google Sheet 的角色與設計
 
-Google Sheet 主要扮演兩種角色：
+Google Sheet 的角色是**客戶報表展示端**：
 
-1. **操作台**：送出單一帳號刷新請求
-2. **狀態面板 / 報表端**：顯示刷新結果與資料
+1. **報表端**：顯示刷新結果與資料，供客戶查看
+2. **狀態面板**：顯示帳號的最新狀態（由 Server 透過 Google Sheets API 回寫）
+
+注意：手動刷新操作已移至 React Dashboard，Google Sheet 不再承擔操作台的角色。
 
 ### 7.1 帳號設定表建議欄位
 
@@ -234,23 +251,25 @@ Google Sheet 主要扮演兩種角色：
 
 ### 7.2 操作方式
 
-使用者在某列觸發刷新時：
+使用者在 React Dashboard 觸發手動刷新時：
 
-1. Apps Script 讀取該列
-2. 取得：
+1. 使用者在 Dashboard 選擇帳號
+2. Dashboard 讀取該帳號的：
    - `account_id`
    - `platform`
    - `refresh_days`
-3. 驗證後送至 Server
-4. 先在 Sheet 顯示：
+3. 透過後端 API 送出刷新請求
+4. Dashboard 立即顯示：
    - `queued`
    - `已送出請求，等待系統回應`
 
-完成後再由 Server 或同步流程回寫：
+完成後由 Server 更新狀態，Dashboard 透過輪詢取得最新結果：
 
 - `success` / `error`
 - `last_success_time`
 - `system_message`
+
+同時，Server 也會透過 Google Sheets API 將結果回寫至 Google Sheet，供客戶查看。
 
 ---
 
@@ -290,29 +309,28 @@ Sheet 應顯示簡單、可理解的系統訊息，例如：
 
 ---
 
-## 9. Trigger 與回寫策略
+## 9. 回寫策略
 
-### 9.1 不用 onTime 持續輪詢等待
+### 9.1 Server 直接回寫 Google Sheet
 
-不建議做成：
+Server 在任務完成後，透過 Google Sheets API（Service Account）直接將結果回寫至 Google Sheet。
 
-- Apps Script 送請求後一直開計時器輪詢等待結果
+流程：
 
-原因：
+1. 任務完成（success 或 error）
+2. Server 更新內部資料庫狀態
+3. Server 呼叫 Google Sheets API 回寫狀態與結果
+4. Dashboard 透過輪詢取得最新狀態
 
-- 容易浪費執行資源
-- 不穩定
-- 不必要地增加複雜度
+### 9.2 Dashboard 輪詢展示
 
-### 9.2 建議做法
-
-- 送出請求時先更新 Sheet 狀態為 `queued`
-- 由 Server 在任務完成後，透過安全同步流程將結果回寫至 Sheet
-- Sheet 只負責顯示狀態與結果，不負責長時間等待
+- Dashboard 以固定間隔（例如 15 秒）輪詢後端 API
+- 取得帳號最新的 `refreshStatus` 和 `systemMessage`
+- 展示即時狀態給操作人員
 
 也就是：
 
-> **Sheet 是狀態展示端，不是長輪詢引擎。**
+> **Server 主動回寫 Google Sheet，Dashboard 以輪詢展示即時狀態。兩者平行運作，不互相依賴。**
 
 ---
 
@@ -320,30 +338,23 @@ Sheet 應顯示簡單、可理解的系統訊息，例如：
 
 由於前端可能會有不合格的呼叫方式，甚至重複送出大量請求，因此必須加入多層防護。
 
-### 10.1 三層驗證 refresh_days
+### 10.1 Server 端驗證
 
-#### 第一層：Sheet 端
+所有驗證集中在 Server，不依賴前端或中介層：
 
-使用資料驗證限制：
+#### refresh_days 驗證
+
+Server 必須驗證：
 
 - 必須為整數
 - 範圍 1–365
 
-#### 第二層：Apps Script 端
+#### 請求來源驗證
 
-送 request 前再檢查：
+- Dashboard 操作需要有效的 Session Cookie
+- 外部 API 呼叫需要 HMAC 簽章驗證
 
-- 是否為數字
-- 是否為整數
-- 是否介於 1–365
-
-不合法則不送到 Server，直接回寫錯誤訊息到 Sheet。
-
-#### 第三層：Server 端
-
-Server 必須再次驗證，不能信任前端。
-
-> **真正可信任的驗證只在 Server。**
+> **所有驗證只在 Server 執行。前端（Dashboard / Google Sheet）不承擔驗證責任。**
 
 ### 10.2 去重複（Deduplication）
 
@@ -365,11 +376,10 @@ Server 必須再次驗證，不能信任前端。
 
 ### 10.4 Request 驗證
 
-Apps Script 呼叫 Server 時，應帶有安全驗證資訊，例如：
+呼叫 Server 寫入 API 時，應帶有安全驗證資訊：
 
-- API key
-- timestamp
-- request signature
+- Dashboard 操作：Session Cookie
+- 外部系統 API 呼叫：HMAC 簽章（API key + timestamp + request signature）
 
 避免知道 endpoint 的人可以任意亂打。
 
@@ -415,10 +425,15 @@ Apps Script 呼叫 Server 時，應帶有安全驗證資訊，例如：
 - `fb_views`
 - `tiktok_views`
 - `total_views`
+- `likes`
+- `comments`
+- `shares`
 - `fetch_time`
 - `data_status`
 
-這能避免後續因平台差異造成資料結構混亂。
+每筆內容只屬於一個平台，因此只填其中一個平台的 views 值，其餘為 0。`total_views` 為所有平台 views 的加總（實質上等於有值的那個欄位）。
+
+這樣設計是為了讓 Google Sheet 輸出時，客戶可以一目了然看到各平台的分項數據。
 
 ### 11.3 Google Sheet Output
 
@@ -440,6 +455,7 @@ Google Sheet 顯示的是整理後、可讀性高的輸出資料，而不是 raw
 - 驗證與保護機制
 - 資料標準化
 - 同步結果
+- 透過 Google Sheets API 回寫資料至 Google Sheet
 
 #### DB
 
@@ -448,22 +464,22 @@ Google Sheet 顯示的是整理後、可讀性高的輸出資料，而不是 raw
 - 存 job logs
 - 存 account mapping / token / refresh records
 
-#### Apps Script
+#### React Dashboard
 
-- 從 Sheet 讀設定
-- 發送刷新請求
-- 顯示狀態
-- 做輕量同步
+- 內部操作台
+- 帳號狀態展示
+- 手動觸發刷新
+- 管理員核准使用者
 
 #### Google Sheet
 
-- 操作台
-- 狀態面板
-- 客戶與內部查看報表的介面
+- 客戶查看報表的介面
+- 由 Server 直接回寫資料
+- 不承擔操作或控制功能
 
 ### 12.2 一句話架構
 
-> **Google Sheet 是任務提交器與狀態面板，Server 是唯一的任務執行者與資料來源。**
+> **React Dashboard 是內部操作台，Google Sheet 是客戶報表介面，Server 是唯一的任務執行者與資料來源。**
 
 ---
 
@@ -472,19 +488,24 @@ Google Sheet 顯示的是整理後、可讀性高的輸出資料，而不是 raw
 目前已明確收斂如下：
 
 - 系統定位為 **內部使用的資料中台**
-- Google Sheet 保留，但不作為主資料源
+- Google Sheet 保留，但只作為客戶報表展示端
 - 資料應存於 Server / DB
-- Apps Script 只作為輕量控制與介面橋接
+- **不使用 Apps Script**，Server 透過 Google Sheets API 直接回寫 Sheet
+- React Dashboard 作為內部操作台與狀態展示端
 - 支援固定排程與手動刷新
+- 手動刷新由 **Dashboard** 觸發（非 Google Sheet）
 - 手動刷新單位為 **單一帳號**
 - 手動刷新範圍為 **最近 N 天所有內容**
-- `refresh_days` 由使用者直接在 Sheet 填寫
+- `refresh_days` 由帳號設定管理
 - `refresh_days` 範圍限制為 **1–365**
 - 不採用自由日期區間 `time_range`
 - 刷新請求採 **非同步 queue 架構**
 - 送出請求後先顯示 `queued`
-- 不用 Apps Script 長時間等待或 onTime 輪詢
+- Job 失敗後支援**自動重試**（指數退避，最多 2-3 次）
 - 必須做防呆、rate limit、去重複與 request 驗證
+- 驗證全部集中在 **Server 端**
+- Normalized 資料使用**分平台 views 欄位**（ig_views / fb_views / tiktok_views / total_views）
+- 系統包含 **用戶認證**（註冊 → 管理員審核 → 登入）
 
 ---
 
@@ -492,13 +513,14 @@ Google Sheet 顯示的是整理後、可讀性高的輸出資料，而不是 raw
 
 下一階段可依序展開：
 
-1. 定義 `account_config` 的 Sheet 欄位
-2. 定義 Server 的 refresh request payload 格式
-3. 設計 job table / queue model
-4. 設計 Apps Script 送出請求的流程
-5. 設計 Server 完成後的同步回寫機制
-6. 定義 `system_message` 與 `refresh_status` 的標準字典
-7. 再往下補 token、platform adapter、normalized schema
+1. 實作 Google Sheets API 整合（替換 FileSheetGateway）
+2. 實作 OAuth 2.0 授權流程（Instagram / TikTok）
+3. 實作 Access Token / Refresh Token 管理與自動刷新
+4. 實作真正的平台 API 呼叫（替換 fixture）
+5. 實作 JobQueue 自動重試機制（指數退避）
+6. 修正 normalization-service 改為分平台 views 欄位
+7. Dashboard 加入手動刷新觸發功能
+8. 定義 `system_message` 與 `refresh_status` 的標準字典
 
 ---
 
@@ -509,13 +531,73 @@ Google Sheet 顯示的是整理後、可讀性高的輸出資料，而不是 raw
 如果邊界不清楚，就會出現以下問題：
 
 - Sheet 同時想當資料庫、控制器、報表、商業邏輯中心
-- Apps Script 過重
-- Server 只剩 API 代理，無法真正控管流程
 - 前端誤觸就可能造成大量 request
+- Server 只剩 API 代理，無法真正控管流程
 
 因此最終收斂出的方向是：
 
-> **以 Server 為核心，將抓取、標準化、保護與任務處理集中管理；以 Google Sheet 作為熟悉的操作與展示介面；以 Apps Script 作為二者之間的輕量橋接。**
+> **以 Server 為核心，將抓取、標準化、保護與任務處理集中管理；以 React Dashboard 作為內部操作台；以 Google Sheet 作為客戶熟悉的報表介面，由 Server 直接透過 Google Sheets API 回寫資料。**
 
-這樣的架構既保留了商務與客戶端的使用習慣，也為後續多平台擴充、指標整合、風險控制與分析能力打下基礎。
+這樣的架構既保留了客戶端的使用習慣，也為後續多平台擴充、指標整合、風險控制與分析能力打下基礎。
+
+---
+
+## 16. 用戶認證系統
+
+### 16.1 定位
+
+系統需要用戶認證機制保護 Dashboard 和 API 存取，避免未授權存取內部資料。
+
+### 16.2 認證方式
+
+採用 Cookie-based Session 認證：
+
+- Session Cookie（HttpOnly, Secure, SameSite）
+- Session TTL 預設 7 天
+- 密碼使用 scrypt 加鹽雜湊
+
+### 16.3 用戶生命週期
+
+1. **註冊** — 使用者提交 email + 密碼 + 姓名，建立 `pending` 狀態帳號
+2. **管理員審核** — Admin 查看待審核清單，決定核准或拒絕
+3. **啟用** — 核准後狀態變為 `active`，可以登入
+4. **登入 / 登出** — 使用 Session Cookie 管理會話
+5. **忘記密碼** — 發送重設令牌，限時更換密碼
+
+### 16.4 角色
+
+- `admin` — 可核准/拒絕使用者、觸發排程同步
+- `member` — 可查看 Dashboard、觸發手動刷新
+
+### 16.5 初始管理員
+
+透過環境變數 `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` 在首次啟動時建立初始管理員帳號。
+
+---
+
+## 17. React Dashboard
+
+### 17.1 定位
+
+React Dashboard 是系統的**內部操作台與狀態展示端**，取代原本 Apps Script 的操作台角色。
+
+### 17.2 核心功能
+
+- **唯讀展示** — 帳號列表、刷新狀態、內容結果表格
+- **手動刷新觸發** — 選擇帳號後觸發刷新（透過後端 API）
+- **管理員功能** — 用戶核准/拒絕
+
+### 17.3 安全邊界
+
+- Dashboard 為 read-only 展示 + 受控的操作觸發
+- 不保存第三方 tokens 或 API secrets
+- 不直接呼叫外部平台 API
+- 所有寫入操作透過後端 API 完成
+
+### 17.4 技術選型
+
+- React + Vite
+- CSS Modules 樣式管理
+- 原生 fetch API 呼叫後端
+- 輪詢機制取得即時狀態（預設 15 秒間隔）
 

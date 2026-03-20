@@ -16,7 +16,7 @@
 | 模組系統 | ESM (ECMAScript Modules) |
 | 外部依賴 | **零** — 完全使用 Node 標準函式庫 |
 | 持久化 | JSON 檔案（原子寫入） |
-| 認證 | HMAC-SHA256 簽章驗證 |
+| 認證 | HMAC-SHA256 簽章驗證 + Cookie-based Session |
 | 測試框架 | `node:test` (內建) |
 | 平台資料來源 | Fixture JSON 檔案（模擬 API） |
 
@@ -27,7 +27,7 @@
 ```mermaid
 graph TB
     subgraph External["外部觸發源"]
-        GAS["Google Apps Script<br/>(手動刷新)"]
+        DASH["React Dashboard<br/>(手動刷新 + 狀態展示)"]
         CRON["內部排程器<br/>(SchedulerService)"]
         CLI["CLI 工具<br/>(sign-request / seed-demo)"]
     end
@@ -89,9 +89,9 @@ graph TB
         FIX["fixtures/platforms/*.json"]
     end
 
-    GAS -->|HMAC signed POST| MR
+    DASH -->|Session Cookie + API call| MR
     CRON -->|內部觸發| SR
-    CLI -->|產生簽章| GAS
+    CLI -->|產生簽章| DASH
 
     Router --> HR & MR & SR
     MR --> HMAC --> VAL --> MRS
@@ -179,7 +179,7 @@ graph LR
 
 ```mermaid
 sequenceDiagram
-    actor Client as Google Apps Script
+    actor Client as React Dashboard
     participant Route as ManualRefreshRoute
     participant Auth as AuthService
     participant Valid as ValidationService
@@ -723,6 +723,17 @@ social-media-fetcher-spec-kit/
 | Method | Path | 認證 | 說明 |
 |--------|------|------|------|
 | `GET` | `/health` | 無 | 健康檢查，回傳 queue/scheduler 狀態 |
+| `GET` | `/api/v1/ui/accounts` | Session | 帳號列表（Dashboard 用） |
+| `GET` | `/api/v1/ui/accounts/:platform/:accountId` | Session | 帳號詳情（Dashboard 用） |
+| `POST` | `/api/v1/auth/register` | 無 | 用戶註冊 |
+| `POST` | `/api/v1/auth/login` | 無 | 用戶登入 |
+| `POST` | `/api/v1/auth/logout` | Session | 用戶登出 |
+| `GET` | `/api/v1/auth/me` | Session | 取得當前用戶 |
+| `POST` | `/api/v1/auth/forgot-password` | 無 | 忘記密碼 |
+| `POST` | `/api/v1/auth/reset-password` | Token | 重設密碼 |
+| `GET` | `/api/v1/admin/pending-users` | Session + Admin | 列出待審核用戶 |
+| `POST` | `/api/v1/admin/pending-users/:userId/approve` | Session + Admin | 核准用戶 |
+| `POST` | `/api/v1/admin/pending-users/:userId/reject` | Session + Admin | 拒絕用戶 |
 | `POST` | `/api/v1/refresh-jobs/manual` | HMAC | 觸發單一帳號手動刷新 |
 | `POST` | `/api/v1/internal/scheduled-sync` | HMAC | 觸發所有 active 帳號排程同步 |
 
