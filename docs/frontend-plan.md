@@ -1,369 +1,331 @@
-# 前端需求與整合設計
+# 前端需求說明
 
 ## 分析依據
 
-本文件依據以下規格與實作整理：
+本文件依據目前 repo 中已存在的實作與測試整理，主要參考：
 
-- [`specs/001-social-data-hub/spec.md`](../specs/001-social-data-hub/spec.md)
-- [`specs/001-social-data-hub/plan.md`](../specs/001-social-data-hub/plan.md)
-- [`specs/001-social-data-hub/quickstart.md`](../specs/001-social-data-hub/quickstart.md)
-- [`specs/001-social-data-hub/contracts/api.openapi.yaml`](../specs/001-social-data-hub/contracts/api.openapi.yaml)
-- [`package.json`](../package.json)
-- [`src/server.js`](../src/server.js)
-- [`src/app.js`](../src/app.js)
-- [`src/routes/manual-refresh-route.js`](../src/routes/manual-refresh-route.js)
-- [`src/routes/internal-scheduled-sync-route.js`](../src/routes/internal-scheduled-sync-route.js)
-- [`src/routes/health-route.js`](../src/routes/health-route.js)
-- [`src/services/status-service.js`](../src/services/status-service.js)
+- [`backend/src/app.js`](../backend/src/app.js)
+- [`backend/src/routes/auth-routes.js`](../backend/src/routes/auth-routes.js)
+- [`backend/src/routes/health-route.js`](../backend/src/routes/health-route.js)
+- [`backend/src/routes/ui-accounts-route.js`](../backend/src/routes/ui-accounts-route.js)
+- [`backend/src/services/ui-dashboard-service.js`](../backend/src/services/ui-dashboard-service.js)
+- [`backend/src/services/user-auth-service.js`](../backend/src/services/user-auth-service.js)
+- [`frontend/src/App.jsx`](../frontend/src/App.jsx)
+- [`frontend/src/api/authApi.js`](../frontend/src/api/authApi.js)
+- [`frontend/src/api/dashboardApi.js`](../frontend/src/api/dashboardApi.js)
+- [`tests/integration/auth-session.test.js`](../tests/integration/auth-session.test.js)
+- [`tests/integration/frontend-ui.test.js`](../tests/integration/frontend-ui.test.js)
 
-另為釐清前端可用資料來源與實際限制，補充參考：
+## 1. 文件目的
 
-- [`specs/001-social-data-hub/data-model.md`](../specs/001-social-data-hub/data-model.md)
-- [`src/services/manual-refresh-service.js`](../src/services/manual-refresh-service.js)
-- [`src/services/scheduled-sync-service.js`](../src/services/scheduled-sync-service.js)
-- [`src/services/auth-service.js`](../src/services/auth-service.js)
-- [`src/adapters/sheets/file-sheet-gateway.js`](../src/adapters/sheets/file-sheet-gateway.js)
-- [`src/repositories/sheet-snapshot-repository.js`](../src/repositories/sheet-snapshot-repository.js)
+這份文件是給前端夥伴的需求說明，重點是回答：
 
-## 1. 目前產品與前端邊界
+- 前端畫面真正要顯示什麼
+- `member` 與 `admin` 看到的差異是什麼
+- 什麼是理想體驗，什麼是目前後端第一版可落地的做法
+- 哪些功能雖然後端有 route，但目前不應視為前端正式需求
 
-- 操作與展示前端為 React Dashboard（內部操作台），Google Sheet 為客戶報表展示端（由 Server 直接回寫）。
-- Server 是唯一可信核心。
-- 現有 Node 服務公開多個 HTTP 路由，包含：
-  - 健康檢查 [`GET /health`]
-  - 帳號列表 [`GET /api/v1/ui/accounts`]
-  - 帳號詳情 [`GET /api/v1/ui/accounts/:platform/:accountId`]
-  - 手動刷新 [`POST /api/v1/refresh-jobs/manual`]（HMAC 認證）
-  - 排程同步 [`POST /api/v1/internal/scheduled-sync`]（HMAC 認證）
-  - 用戶認證（register / login / logout / me / forgot-password / reset-password）
-  - 管理員功能（pending-users / approve / reject）
-- 現有後端已經保存前端最需要的兩類資料：
-  - 帳號狀態快照，由 `StatusService` 寫入 `sheet-status`
-  - 整理後內容輸出，由 `FileSheetGateway` 寫入 `sheet-output`
-- Dashboard 透過 Session Cookie 認證存取 API，手動刷新功能透過後端代理呼叫。
+本文件不是 React 元件拆分手冊，也不是單純的 API 列表。
 
-## 2. 最小可行前端形態
+## 2. 名詞與前提
 
-### 建議結論
+### 2.1 帳號定義
 
-最小可行版本建議做成 **單頁 React Dashboard**，以 Vite 建置與開發，而不是回退成純靜態 HTML。
+本文件提到的「帳號列表」指的是**連結的社群媒體帳號**，不是登入這個系統的使用者帳號。
 
-理由：
+例如目前 [`/api/v1/ui/accounts`](../backend/src/app.js) 回來的資料，是：
 
-- 專案目前已採 React 18 + Vite，延續既有工具鏈比回退成無框架頁面更一致。
-- 前端需求仍以低複雜度為原則，但已經有元件化、狀態管理與測試需求，適合保留 SPA 形式。
-- 現有後端最接近前端需求的是狀態檢視、單帳號刷新、同步結果表格，單頁即可覆蓋。
+- `instagram / acct-instagram-demo`
+- `facebook / acct-facebook-demo`
+- `tiktok / acct-tiktok-demo`
 
-### 建議頁面與區塊
+而系統登入帳號則是 [`admin` / `member`](../backend/src/services/user-auth-service.js) 角色。
 
-最少只需要 **1 個頁面、4 個核心區塊、1 個可選管理區塊**。
+### 2.2 產品前提
 
-#### 頁面 A：營運 Dashboard
+- 前端主體是內容檢視與基本管理，不是操作型後台。
+- `sidebar` 必須保留，因為它是平台與社群帳號的切換入口，不是可有可無的裝飾。
+- `member` 與 `admin` 共用同一個內容首頁。
+- `admin` 比 `member` 多看到管理資訊，不代表需要做成兩套完全不同的前端。
+- Server 仍是唯一可信核心，前端不得保存第三方平台 token，也不得直接持有 HMAC secret。
 
-1. **服務狀態區塊**
-2. **帳號列表區塊**
-3. **帳號詳情與手動刷新區塊**
-4. **內容結果表格區塊**
-5. **可選：管理員排程同步區塊**
+## 3. 畫面原則
 
-```mermaid
-flowchart LR
-  UI[React Dashboard]
-  READ[Read API Layer]
-  WRITE[Trusted Command API]
-  CORE[Node Service Layer]
-  STORE[Status Snapshot and Output Snapshot]
+### 3.1 Member / User 視角
 
-  UI --> READ
-  UI --> WRITE
-  READ --> CORE
-  WRITE --> CORE
-  CORE --> STORE
-```
+`member` 進系統後，首頁核心應該是「內容總覽」，不是帳號設定資訊。
 
-## 3. 各區塊需要顯示的欄位與後端銜接
+首頁體驗應偏向：
 
-| 區塊 | 主要欄位 | 目前可對應後端 | API 現況 | 備註 |
-|---|---|---|---|---|
-| 服務狀態 | `status`、`queue.pending`、`queue.running`、`queue.concurrency`、`scheduler.running`、`scheduler.intervalMs`、`scheduler.tickInProgress`、`now` | [`handleHealthRoute()`](../src/routes/health-route.js#L3) | 已存在 | 可直接重用 [`GET /health`](../specs/001-social-data-hub/contracts/api.openapi.yaml) |
-| 帳號列表 | `clientName`、`platform`、`accountId`、`refreshDays`、`isActive`、`refreshStatus`、`systemMessage`、`lastRequestTime`、`lastSuccessTime`、`currentJobId` | [`AccountConfiguration`](../specs/001-social-data-hub/data-model.md) + [`SheetStatusSnapshot`](../specs/001-social-data-hub/data-model.md) | 缺少讀取 API | 需由帳號設定與狀態快照組合成前端列表資料 |
-| 帳號詳情與手動刷新 | 選定帳號的基本資料、目前狀態、最近成功時間、目前工作 ID、可提交的 `refresh_days` | [`handleManualRefreshRoute()`](../src/routes/manual-refresh-route.js#L5) + [`ManualRefreshService`](../src/services/manual-refresh-service.js) | 送出 API 已存在，讀取詳情不足 | 手動刷新可沿用現有 POST，但瀏覽器不能直接持有 HMAC secret |
-| 內容結果表格 | `syncedAt`、`content_id`、`content_type`、`published_at`、`caption`、`url`、`views`、`likes`、`comments`、`shares`、`data_status` | [`writeOutput()`](../src/adapters/sheets/file-sheet-gateway.js#L19) 寫入的 output snapshot | 缺少讀取 API | 這是前端最主要的內容展示區 |
-| 管理員排程同步 | `requested_by`、接受的 jobs 數量、`skipped_accounts`、略過原因 | [`handleInternalScheduledSyncRoute()`](../src/routes/internal-scheduled-sync-route.js#L6) + [`ScheduledSyncService`](../src/services/scheduled-sync-service.js) | 已有 POST，缺少 browser-safe 入口 | 建議標示為管理員功能，而非一般操作入口 |
+- 先看到 Instagram、TikTok 等平台的內容表現
+- 先看內容，再決定是否切到某個平台或某個社群帳號
+- `views` 是首頁最重要的成效指標
+- `caption/title`、`url`、發布時間是輔助理解內容的必要資訊
 
-### 3.1 服務狀態區塊
+### 3.2 Admin 視角
 
-**建議顯示欄位**
+`admin` 與 `member` 共用內容首頁，但額外需要：
 
-- 服務健康狀態
-- 目前 queue 等候數
-- 目前 queue 執行中數量
-- queue 並行上限
-- scheduler 是否啟動
-- scheduler 週期
-- scheduler 是否正在執行中
-- 伺服器時間
+- 系統健康狀態 `health`
+- 待審使用者清單 `pending users`
 
-**可直接對應 API**
+其中 `health` 是 **UI 顯示規則上的 admin-only**，不是目前後端權限保證。後端 [`GET /health`](../backend/src/app.js) 目前是公開 route，前端應自行限制只在 `admin` 畫面呈現。
 
-- 現有 [`/health`](../specs/001-social-data-hub/contracts/api.openapi.yaml)
+## 4. 理想體驗
 
-**前端用途**
+### 4.1 Member / User 首頁
 
-- 讓營運人員快速判斷系統是否存活
-- 讓管理員理解目前工作堆積與排程狀態
+理想中的 `member` 首頁應該長成以下結構：
 
-### 3.2 帳號列表區塊
+- 左側保留 `sidebar`
+- 右側主區是內容總覽
+- 內容先依平台分區，例如 Instagram、TikTok
+- 各平台區內以 `views` 由高到低排序
+- 平台區首頁先顯示摘要，不直接把全部內容完整攤開
+- 使用者可再透過平台篩選或帳號篩選，看完整內容列表
 
-**建議顯示欄位**
+### 4.2 Member / User 主內容區
 
-- 客戶名稱 `clientName`
-- 平台 `platform`
-- 帳號 `accountId`
-- 預設刷新天數 `refreshDays`
-- 是否啟用 `isActive`
-- 目前狀態 `refreshStatus`
-- 系統訊息 `systemMessage`
-- 最近請求時間 `lastRequestTime`
-- 最近成功時間 `lastSuccessTime`
-- 目前工作 ID `currentJobId`
+首頁內容總覽應以「平台摘要」為第一層，而不是帳號明細卡。
 
-**後端資料來源**
+每個平台區塊建議至少包含：
 
-- [`AccountConfiguration`](../specs/001-social-data-hub/data-model.md)
-- [`SheetStatusSnapshot`](../specs/001-social-data-hub/data-model.md)
-- [`StatusService`](../src/services/status-service.js) 已保證帳號狀態會同步寫回 snapshot
+- 平台名稱
+- 平台下可見內容摘要
+- 代表性內容的 `caption/title`
+- `url`
+- 發布時間
+- `views`
+- 好懂的來源名稱
 
-**所需銜接方式**
+「來源名稱」不應只露出技術欄位。建議顯示方式：
 
-目前沒有現成讀取 API，建議新增一個聚合讀取端點，概念如下：
+- 第一層顯示 `clientName`
+- 第二層再補 `platform + accountId`
 
-- `GET /api/v1/ui/accounts`
+若前端需要「title」欄位，目前最接近的是內容列中的 `caption`。若 `caption` 為空，建議退回 `content_id` 作為備援顯示值。
 
-此端點應回傳：
+### 4.3 Summary 與完整列表的切換
 
-- 帳號設定基本欄位
-- 最新狀態快照欄位
-- 供列表排序與篩選的衍生欄位
+首頁不是直接展示所有內容全文量清單，而是：
 
-### 3.3 帳號詳情與手動刷新區塊
+- 首頁先顯示各平台摘要
+- 點擊平台區或透過 `sidebar` 篩選後，才進入完整內容列表
 
-**建議顯示欄位**
+預設假設：
+
+- 各平台摘要區先顯示 `views` 最高的前 5 筆內容
+- 完整列表再顯示該平台或該帳號的全部可見內容
+
+### 4.4 Sidebar 角色
+
+`sidebar` 必須保留，並且要被定義成**正式需求的一部分**。
+
+`sidebar` 的角色不是帳號設定面板，而是：
+
+- 平台篩選
+- 社群媒體帳號篩選
+- 顯示目前選取狀態
+- 幫助使用者從「全平台內容總覽」切換到「單一平台 / 單一帳號內容」
+
+`sidebar` 每個項目建議至少顯示：
 
 - `clientName`
 - `platform`
 - `accountId`
-- `refreshStatus`
-- `systemMessage`
-- `lastRequestTime`
-- `lastSuccessTime`
-- `currentJobId`
-- 預設 `refreshDays`
-- 可提交的手動刷新值 `refresh_days`
+- `refreshStatus` 或 `lastSuccessTime`
 
-**操作**
+這樣使用者能知道自己切換的是哪個社群帳號，也能快速判斷資料是否新鮮。
 
-- 點選帳號後顯示詳情
-- 提供手動刷新按鈕
-- 提交成功後立即顯示 `queued`
-- 後續透過輪詢刷新帳號狀態與內容結果
+### 4.5 Admin 額外需求
 
-**可對應既有 API**
+`admin` 在共用首頁之外，應額外看到兩塊：
 
-- 現有 [`/api/v1/refresh-jobs/manual`](../specs/001-social-data-hub/contracts/api.openapi.yaml)
+1. **Health 區塊**
+2. **Pending Users 區塊**
 
-**重要限制**
+`Health` 區塊建議顯示：
 
-- 此 API 需要 `x-client-id`、`x-timestamp`、`x-signature`
-- 簽章由 [`verifySignedRequest()`](../src/services/auth-service.js#L23) 驗證
-- 瀏覽器端不應持有 `API_SHARED_SECRET`
+- `status`
+- `queue.pending`
+- `queue.running`
+- `queue.concurrency`
+- `scheduler.running`
+- `scheduler.intervalMs`
+- `scheduler.tickInProgress`
+- `now`
 
-**因此建議**
+`Pending Users` 區塊建議顯示：
 
-- 不要讓瀏覽器直接呼叫現有 HMAC API
-- 應透過受信任的後端包裝層代送，或新增 browser-safe command route，再於 server 內部重用 [`ManualRefreshService`](../src/services/manual-refresh-service.js)
+- `displayName`
+- `email`
+- `status`
+- `createdAt`
+- `approve`
+- `reject`
 
-### 3.4 內容結果表格區塊
+## 5. 第一版可落地做法
 
-**建議顯示欄位**
+### 5.1 目前後端已存在的讀取能力
 
-- 同步時間 `syncedAt`
-- 內容 ID `content_id`
-- 內容類型 `content_type`
-- 發布時間 `published_at`
-- 摘要 `caption`
-- 連結 `url`
-- 觀看數 `views`
-- 按讚數 `likes`
-- 留言數 `comments`
-- 分享數 `shares`
-- 資料狀態 `data_status`
+目前後端其實已經有前端可直接使用的 read APIs：
 
-**後端資料來源**
+- [`GET /api/v1/ui/accounts`](../backend/src/app.js)
+- [`GET /api/v1/ui/accounts/:platform/:accountId`](../backend/src/app.js)
+- [`GET /health`](../backend/src/app.js)
+- 認證與 admin APIs：
+  - `POST /api/v1/auth/register`
+  - `POST /api/v1/auth/login`
+  - `POST /api/v1/auth/logout`
+  - `GET /api/v1/auth/me`
+  - `POST /api/v1/auth/forgot-password`
+  - `POST /api/v1/auth/reset-password`
+  - `GET /api/v1/admin/pending-users`
+  - `POST /api/v1/admin/pending-users/:userId/approve`
+  - `POST /api/v1/admin/pending-users/:userId/reject`
 
-- [`writeOutput()`](../src/adapters/sheets/file-sheet-gateway.js#L19) 已將 normalized records 轉成前端可讀欄位
-- 寫入位置來自 [`SheetSnapshotRepository`](../src/repositories/sheet-snapshot-repository.js)
+舊文件中「缺少 UI 讀取 API」的描述已不符合目前 codebase。
 
-**所需銜接方式**
+### 5.2 第一版首頁建議
 
-目前沒有讀取 API，建議至少新增：
+第一版仍建議維持單一 Dashboard shell，但做法要貼齊目前後端資料形狀：
 
-- `GET /api/v1/ui/accounts/:platform/:accountId/output`
+1. 先用 [`GET /api/v1/auth/me`](../backend/src/app.js) 取得目前登入者
+2. 用 [`GET /api/v1/ui/accounts`](../backend/src/app.js) 取得社群帳號清單與狀態摘要
+3. 保留左側 `sidebar`，先完成平台篩選與帳號篩選
+4. 主內容區預設先顯示平台摘要
+5. 使用者切平台或帳號後，再用 [`GET /api/v1/ui/accounts/:platform/:accountId`](../backend/src/app.js) 載入完整內容列表
 
-若希望減少 API 數量，也可將列表與詳情合併為：
+也就是說，第一版不必先做成「超大型多頁 SPA」，而是先把單一 Dashboard 內的內容檢視體驗做好。
 
-- `GET /api/v1/ui/accounts`
-- `GET /api/v1/ui/accounts/:platform/:accountId`
+### 5.3 理想首頁與目前後端的落差
 
-其中詳情端點直接包含最新 output snapshot。
+你想要的理想首頁是「一進系統先看全平台內容總覽」。  
+目前後端比較自然提供的是「以單一社群帳號為單位的 detail rows」。
 
-### 3.5 可選管理員排程同步區塊
+因此第一版有兩種現實作法：
 
-**建議顯示欄位**
+#### 作法 A：先走 account-based 首頁
 
-- 觸發人 `requested_by`
-- 本次 accepted jobs 數量
-- `accepted_jobs`
-- `skipped_accounts`
-- 每個 skipped account 的原因
+- 首頁先顯示平台摘要與 `sidebar`
+- 使用者再切入某個平台或帳號看完整列表
 
-**可對應既有 API**
+這是最穩定、最貼近現有後端的做法。
 
-- 現有 [`/api/v1/internal/scheduled-sync`](../specs/001-social-data-hub/contracts/api.openapi.yaml)
+#### 作法 B：前端自行 fan-out 聚合
 
-**建議定位**
+- 先讀 `/api/v1/ui/accounts`
+- 再依可見帳號逐筆讀 detail endpoint
+- 在前端把 `latestOutput.rows` 合併成平台摘要
 
-- 僅供管理員或維運使用
-- 不建議放在一般營運人員的主操作流程第一層
+這能更接近理想首頁，但前提是帳號數量不大。若未來帳號數增加，應評估在後端新增聚合 read API，而不是讓瀏覽器永遠 fan-out 多次請求。
 
-## 4. 建議的前端實作方式
+## 6. 畫面清單
 
-### 4.1 技術選型
+| 畫面 / 區塊 | 角色 | 是否正式需求 | 說明 |
+|---|---|---|---|
+| Login | 所有人 | 是 | 本版 auth 主流程之一 |
+| Register | 所有人 | 是 | 本版 auth 主流程之一 |
+| Logout / session restore | 所有人 | 是 | 需搭配 `me` 與 HttpOnly session |
+| Forgot password | 所有人 | 次要 | 後端已支援，但不是這版首頁主體 |
+| Reset password | 所有人 | 次要 | 後端已支援，但不是這版首頁主體 |
+| 內容總覽首頁 | `member` / `admin` | 是 | 首頁主體 |
+| Sidebar 平台 / 帳號篩選 | `member` / `admin` | 是 | 必留，不可省略 |
+| 平台摘要區 | `member` / `admin` | 是 | 內容總覽第一層 |
+| 單一平台 / 單一帳號完整內容列表 | `member` / `admin` | 是 | 摘要之後的深入檢視 |
+| Health | `admin` | 是 | 只在 admin UI 顯示 |
+| Pending users review | `admin` | 是 | 需支援 approve / reject |
+| Manual refresh | `member` / `admin` | 否 | 現階段不列入正式前端需求 |
+| Scheduled sync trigger | `member` / `admin` | 否 | 現階段不列入正式前端需求 |
 
-在目前專案限制下，建議採用：
+## 7. 欄位對應建議
 
-- React 18 元件式介面
-- Vite 開發伺服器與 build pipeline
-- 原生 CSS / design tokens
-- 使用 `fetch` + `credentials: "include"` 呼叫後端
-- 前端維持唯讀與受限操作，不持有第三方平台 secret
+### 7.1 首頁內容欄位
 
-### 4.2 建議目錄與實作形式
+| 前端顯示名稱 | 目前後端欄位 | 說明 |
+|---|---|---|
+| 標題 | `caption` | 目前最接近 title 的欄位 |
+| 連結 | `url` | 點開原始貼文 / 影片 |
+| 發布時間 | `published_at` | 內容時間排序與理解用 |
+| 觀看數 | `views` | 首頁主 KPI |
+| 來源名稱 | `clientName` | 使用者看得懂的主要來源文案 |
+| 來源補充 | `platform` + `accountId` | 二層說明，避免只有技術代碼 |
 
-建議未來前端資產放在：
+### 7.2 Sidebar 欄位
 
-- [`frontend/`](../frontend/)
+| 欄位 | 來源 |
+|---|---|
+| `clientName` | `/api/v1/ui/accounts` |
+| `platform` | `/api/v1/ui/accounts` |
+| `accountId` | `/api/v1/ui/accounts` |
+| `refreshStatus` | `/api/v1/ui/accounts` |
+| `lastSuccessTime` | `/api/v1/ui/accounts` |
 
-最小結構可為：
+### 7.3 Admin 欄位
 
-- [`frontend/index.html`](../frontend/index.html)
-- [`frontend/src/main.jsx`](../frontend/src/main.jsx)
-- [`frontend/src/App.jsx`](../frontend/src/App.jsx)
-- [`frontend/src/styles/`](../frontend/src/styles/)
+| 區塊 | 欄位來源 |
+|---|---|
+| Health | `/health` |
+| Pending users | `/api/v1/admin/pending-users` |
 
-### 4.3 前端互動模式
+## 8. 注意事項
 
-- 進站先載入服務狀態與帳號列表
-- 使用列表點選切換帳號詳情
-- 手動刷新送出後，前端不等待完成，只更新畫面為已送出
-- 之後以輪詢方式更新帳號狀態與內容快照
+### 8.1 安全與權限
 
-### 4.4 認證與 CSRF 策略
+- 前端所有受保護請求都要走 HttpOnly session cookie。
+- 前端請求需使用 `credentials: "include"`，這和目前 [`frontend/src/api/httpClient.js`](../frontend/src/api/httpClient.js) 一致。
+- 前端不應把 session token 存到 Local Storage / Session Storage。
+- `manual refresh` 與 `scheduled sync` 的 route 目前受 HMAC 保護，不應被前端視為可直接呼叫的功能。
+- 前端不得保存 `API_SHARED_SECRET`。
 
-- Dashboard 使用 HttpOnly session cookie，不把 session token 存到 Local Storage / Session Storage。
-- 前端所有 API 請求都使用 `credentials: "include"`，並僅信任明確設定的 backend origin。
-- 所有會改變狀態的 cookie-based 請求都必須要求受信任 frontend origin；這是第一層 CSRF 防護。
-- `SameSite=Lax` 是基線設定；若未來出現跨站嵌入需求，再評估 double-submit CSRF token。
-- 既有 HMAC 保護的 `manual-refresh` / `scheduled-sync` 仍只允許 server-side 代理，不讓瀏覽器直接持有 shared secret。
+### 8.2 UI 能力邊界
 
-### 4.4 為何不建議更重的方案
+目前 [`UiDashboardService`](../backend/src/services/ui-dashboard-service.js) 對 UI 明確回傳：
 
-- 目前後端是單體 Node 服務，沒有現成靜態資產 pipeline
-- 專案刻意維持無外部 runtime dependency
-- 需求以內部資料檢視與操作為主，尚未需要 SPA 複雜路由或高度互動元件
+- `mode: "read-only"`
+- `manualRefresh: false`
+- `scheduledSync: false`
 
-## 5. API 整合建議
+這表示目前前端正式需求應以唯讀內容檢視為主，而不是操作型控制台。
 
-### 可直接沿用的既有 API
+### 8.3 Health 與 Member 畫面
 
-1. **健康狀態**
-   - [`GET /health`](../specs/001-social-data-hub/contracts/api.openapi.yaml)
+- `health` 是 admin 需要的資訊，不是 member 首頁核心。
+- 即使後端 route 目前未做 admin-only 保護，前端畫面也應只在 `admin` 角色顯示。
 
-2. **單帳號手動刷新**
-   - [`POST /api/v1/refresh-jobs/manual`](../specs/001-social-data-hub/contracts/api.openapi.yaml)
-   - 只能經由受信任中介層使用，不建議瀏覽器直接打
+### 8.4 Sidebar 不可被拿掉
 
-3. **排程同步觸發**
-   - [`POST /api/v1/internal/scheduled-sync`](../specs/001-social-data-hub/contracts/api.openapi.yaml)
-   - 建議僅作管理員功能
+即使首頁主體改成內容總覽，`sidebar` 仍是必要結構，原因如下：
 
-### 必要新增的前端讀取能力
+- 使用者仍需要從「全部內容」切到「單一平台 / 單一帳號」
+- 使用者需要知道目前看到的是哪個來源
+- 若之後補更多平台，沒有 `sidebar` 會讓導覽失焦
 
-若要讓 web 前端可用，至少需要補以下其中一種方案：
+### 8.5 不要混淆兩種帳號
 
-#### 方案 A：新增前端專用讀取 API
+文件與前端文案都要明確區分：
 
-- `GET /api/v1/ui/accounts`
-- `GET /api/v1/ui/accounts/:platform/:accountId`
-- `GET /api/v1/ui/accounts/:platform/:accountId/output`
+- 系統登入帳號：`admin` / `member`
+- 社群媒體帳號：`instagram` / `tiktok` / `facebook` 等 account
 
-#### 方案 B：新增單一聚合 Dashboard API
+避免在前端 UI 裡把兩者都叫做「帳號」卻沒有上下文。
 
-- `GET /api/v1/ui/dashboard`
+## 9. 不在這版需求中的項目
 
-由單一端點一次回傳：
+以下項目先不要當成這版正式需求：
 
-- health summary
-- account list
-- selected account latest output
+- Browser 直接呼叫手動刷新 API
+- Browser 直接呼叫 scheduled sync API
+- 前端儲存第三方平台 access token / refresh token
+- 獨立的帳號設定後台
+- 以系統健康資訊作為 member 首頁主體
+- 把首頁主體做成單純帳號清單，而非內容總覽
 
-### 建議優先順序
+## 10. 後續可再討論的議題
 
-最務實的是先做：
+若第一版上線後發現「首頁要看全平台內容」是高頻需求，下一階段可再評估：
 
-1. `GET /health` 直接重用
-2. 新增帳號列表聚合 API
-3. 新增單帳號 output API
-4. 以受信任代理包裝手動刷新 POST
-
-## 6. 已知缺口與風險
-
-1. **瀏覽器無法安全直連現有寫入 API**
-   - 現有寫入端點都依賴 HMAC
-   - [`verifySignedRequest()`](../src/services/auth-service.js#L23) 的 shared secret 不可暴露到前端
-
-2. **目前沒有前端可用的讀取 API**
-   - 雖然資料已存在 [`sheet-status`](../data/) 與 [`sheet-output`](../data/)
-   - 但目前沒有安全且穩定的 HTTP 讀取介面
-
-3. **目前 server 不負責靜態檔案服務**
-   - [`createApp()`](../src/app.js#L66) 只註冊 API 路由，沒有 static file handling
-
-4. **目前沒有 job 詳情查詢端點**
-   - 手動刷新接受後，只能靠帳號狀態快照間接觀察進度
-   - 若前端要顯示更完整的 job lifecycle，需補 job query API
-
-5. **系統仍以 React Dashboard 為主要操作介面，Google Sheet 為客戶報表展示端**
-   - React Dashboard 是操作與展示入口
-   - Google Sheet 由 Server 透過 Google Sheets API 直接回寫資料，供客戶查看
-   - 不使用 Apps Script
-
-6. **目前佇列與部分限流狀態為 in-memory**
-   - [`JobQueue`](../src/services/job-queue.js) 與 [`ManualRefreshService`](../src/services/manual-refresh-service.js) 的部分執行中狀態依賴單機記憶體
-   - 這與目前單一 service instance 的規劃一致，但前端設計不應預設多節點一致性
-
-7. **CSRF 與 session 安全需要跟 frontend 部署設定一起管理**
-   - `FRONTEND_ORIGINS`、`PUBLIC_APP_ORIGIN`、cookie `SameSite` 與 TLS 終端設定必須一致
-   - 若部署拓撲改變，frontend plan 與 auth spec 必須一起更新
-
-## 7. 建議的最小交付範圍
-
-若後續要實作 web 前端，建議最小交付範圍如下：
-
-1. 一個單頁 Dashboard
-2. 可顯示服務健康狀態
-3. 可顯示帳號列表與目前刷新狀態
-4. 可查看單帳號最新 normalized output
-5. 可從受信任入口送出單帳號手動刷新
-
-在這個範圍內，就能滿足目前規格最接近前端需求的觀察、查詢、刷新三件事，同時不違反 Server 為唯一可信核心的設計原則。
+- 後端新增聚合內容 read API
+- 平台摘要加入更多成效欄位，例如 `likes`、`comments`、`shares`
+- 平台摘要加入搜尋、排序、分頁
+- 將 forgot / reset password 從次要流程提升成首頁同等完整流程
