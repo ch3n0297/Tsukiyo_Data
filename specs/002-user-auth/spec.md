@@ -1,6 +1,6 @@
 # Feature Specification: 內部登入與註冊系統
 
-**Feature Branch**: `002-user-auth`  
+**Feature Branch**: `feat/user-auth`  
 **Created**: 2026-03-19  
 **Status**: Implemented  
 **Input**: 新增 Web Dashboard 專用的登入/註冊系統，採 Email/密碼、管理員核准制、HttpOnly Cookie Session，並納入忘記密碼流程。

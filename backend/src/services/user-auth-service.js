@@ -73,6 +73,8 @@ export class UserAuthService {
     this.sessionRepository = sessionRepository;
     this.clock = clock;
     this.config = config;
+    this.sessionRefreshThresholdMs =
+      config.sessionRefreshThresholdMs ?? Math.floor(config.sessionTtlMs / 2);
   }
 
   async register({ displayName, email, password }) {
@@ -182,18 +184,27 @@ export class UserAuthService {
       return null;
     }
 
-    const nextExpiry = new Date(now.getTime() + this.config.sessionTtlMs).toISOString();
-    const touchedSession = await this.sessionRepository.updateById(session.id, {
-      lastSeenAt: now.toISOString(),
-      expiresAt: nextExpiry,
-    });
+    const timeRemaining = Date.parse(session.expiresAt) - now.getTime();
 
-    return {
-      session: touchedSession ?? {
-        ...session,
+    if (timeRemaining < this.sessionRefreshThresholdMs) {
+      const nextExpiry = new Date(now.getTime() + this.config.sessionTtlMs).toISOString();
+      const touchedSession = await this.sessionRepository.updateById(session.id, {
         lastSeenAt: now.toISOString(),
         expiresAt: nextExpiry,
-      },
+      });
+
+      return {
+        session: touchedSession ?? {
+          ...session,
+          lastSeenAt: now.toISOString(),
+          expiresAt: nextExpiry,
+        },
+        user: toPublicUser(user),
+      };
+    }
+
+    return {
+      session,
       user: toPublicUser(user),
     };
   }
@@ -303,23 +314,6 @@ export class UserAuthService {
     await this.sessionRepository.create(session);
     return session;
   }
-}
-
-export function createPasswordResetTokenRecord({ userId, clock }) {
-  const rawToken = createRandomToken(32);
-  const now = clock().toISOString();
-
-  return {
-    rawToken,
-    record: {
-      id: crypto.randomUUID(),
-      userId,
-      tokenHash: hashOpaqueToken(rawToken),
-      createdAt: now,
-      expiresAt: null,
-      usedAt: null,
-    },
-  };
 }
 
 export function hashPasswordResetToken(token) {

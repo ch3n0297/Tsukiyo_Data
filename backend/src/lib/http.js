@@ -33,6 +33,8 @@ export async function readJsonRequest(req, { maxBodyBytes = 1024 * 1024 } = {}) 
     const rawBody =
       typeof req.rawBody === "string"
         ? req.rawBody
+        : body && Object.keys(body).length > 0
+          ? JSON.stringify(body)
         : "";
 
     return { rawBody, body };
