@@ -1,6 +1,6 @@
 # Architecture Documentation
 
-**專案**:Social Data Hub (Social-Media-Fetcher_spec-kit)
+**專案**:Social Data Hub (Tsukiyo_Data)
 **正式域名**:`datatsukiyo.org`
 **最後更新**:2026-04-05
 
