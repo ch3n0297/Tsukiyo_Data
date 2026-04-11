@@ -1,8 +1,13 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  disconnectGoogleConnection,
+  startGoogleAuthorization,
+} from "./api/googleIntegrationApi.js";
 import { PendingUsersPanel } from "./components/admin/PendingUsersPanel.jsx";
 import { AuthScreen } from "./components/auth/AuthScreen.jsx";
 import { AccountDetailPanel } from "./components/dashboard/AccountDetailPanel.jsx";
 import { AccountSidebar } from "./components/dashboard/AccountSidebar.jsx";
+import { ContentOverviewPanel } from "./components/dashboard/ContentOverviewPanel.jsx";
 import { HealthCardGrid } from "./components/dashboard/HealthCardGrid.jsx";
 import { PageErrorBanner } from "./components/dashboard/PageErrorBanner.jsx";
 import { SecurityBanner } from "./components/dashboard/SecurityBanner.jsx";
@@ -19,14 +24,12 @@ export default function App() {
   const {
     authView,
     error: authError,
-    forgotPassword,
     isLoading: isAuthLoading,
     isSubmitting: isAuthSubmitting,
     login,
+    loginWithGoogle,
     logout,
     message: authMessage,
-    register,
-    resetPassword,
     switchMode,
     user,
   } = useAuthSession();
@@ -37,20 +40,53 @@ export default function App() {
     health,
     isLoading,
     lastUpdated,
+    platforms,
     refreshDashboard,
     refreshToken,
-  } = useDashboardData({ enabled: Boolean(user) });
+  } = useDashboardData({
+    enabled: Boolean(user),
+    userRole: user?.role,
+  });
   const {
+    clearSelectedAccount,
     detailError,
+    filteredAccounts,
     isDetailLoading,
+    platformOptions,
     selectAccount,
+    selectPlatform,
     selectedAccount,
     selectedAccountKey,
+    selectedPlatform,
     selectedSummary,
   } = useSelectedAccount(accounts, refreshToken, Boolean(user));
   const pendingUsers = usePendingUsers({
     enabled: user?.role === "admin",
   });
+  const [integrationMessage, setIntegrationMessage] = useState("");
+  const [integrationError, setIntegrationError] = useState("");
+  const [isSubmittingConnection, setIsSubmittingConnection] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+
+    if (params.get("integration") !== "google") {
+      return;
+    }
+
+    const nextMessage = params.get("integration_message") ?? "";
+    const status = params.get("integration_status");
+
+    if (status === "success") {
+      setIntegrationMessage(nextMessage);
+      setIntegrationError("");
+    } else {
+      setIntegrationMessage("");
+      setIntegrationError(nextMessage);
+    }
+
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
 
   const handleRefresh = useCallback(() => {
     void refreshDashboard();
@@ -66,6 +102,37 @@ export default function App() {
 
   const handleAutoRefresh = useCallback(() => {
     void refreshDashboard({ silent: true });
+  }, [refreshDashboard]);
+
+  const handleConnectGoogle = useCallback(async (accountConfigId) => {
+    setIsSubmittingConnection(true);
+    setIntegrationMessage("");
+    setIntegrationError("");
+
+    try {
+      const response = await startGoogleAuthorization(accountConfigId, window.location.pathname);
+      window.location.assign(response.authorization_url);
+    } catch (requestError) {
+      setIntegrationError(requestError.message);
+    } finally {
+      setIsSubmittingConnection(false);
+    }
+  }, []);
+
+  const handleDisconnectGoogle = useCallback(async (accountConfigId) => {
+    setIsSubmittingConnection(true);
+    setIntegrationMessage("");
+    setIntegrationError("");
+
+    try {
+      const response = await disconnectGoogleConnection(accountConfigId);
+      setIntegrationMessage(response.system_message ?? "Google 授權連線已解除。");
+      await refreshDashboard();
+    } catch (requestError) {
+      setIntegrationError(requestError.message);
+    } finally {
+      setIsSubmittingConnection(false);
+    }
   }, [refreshDashboard]);
 
   useAutoRefresh(handleAutoRefresh, POLL_INTERVAL_MS, Boolean(user));
@@ -90,10 +157,8 @@ export default function App() {
           error={authError}
           isSubmitting={isAuthSubmitting}
           login={login}
+          loginWithGoogle={loginWithGoogle}
           message={authMessage}
-          register={register}
-          requestPasswordReset={forgotPassword}
-          resetPassword={resetPassword}
           switchMode={switchMode}
         />
       </AppShell>
@@ -111,33 +176,55 @@ export default function App() {
         onRefresh={handleRefresh}
       />
       <SecurityBanner capabilities={capabilities} />
+      {integrationMessage ? <section className="panel banner banner--success">{integrationMessage}</section> : null}
       <PageErrorBanner
-        message={authError || dashboardError || detailError}
+        message={integrationError || authError || dashboardError || detailError}
       />
       {user.role === "admin" ? (
-        <PendingUsersPanel
-          error={pendingUsers.error}
-          isLoading={pendingUsers.isLoading}
-          isSubmitting={pendingUsers.isSubmitting}
-          onApprove={handleApprovePendingUser}
-          onReject={handleRejectPendingUser}
-          users={pendingUsers.users}
-        />
+        <section className="admin-panel-stack">
+          <HealthCardGrid health={health} />
+          <PendingUsersPanel
+            error={pendingUsers.error}
+            isLoading={pendingUsers.isLoading}
+            isSubmitting={pendingUsers.isSubmitting}
+            onApprove={handleApprovePendingUser}
+            onReject={handleRejectPendingUser}
+            users={pendingUsers.users}
+          />
+        </section>
       ) : null}
-      <HealthCardGrid health={health} />
 
       <section className="workspace-grid">
         <AccountSidebar
-          accounts={accounts}
-          onSelect={selectAccount}
+          accounts={filteredAccounts}
+          allAccountCount={accounts.length}
+          onSelectAccount={selectAccount}
+          onSelectPlatform={selectPlatform}
+          platformOptions={platformOptions}
           selectedAccountKey={selectedAccountKey}
+          selectedPlatform={selectedPlatform}
         />
-        <AccountDetailPanel
-          accounts={accounts}
-          isLoading={isDetailLoading}
-          selectedAccount={selectedAccount}
-          selectedAccountSummary={selectedSummary}
-        />
+        {selectedSummary ? (
+          <AccountDetailPanel
+            accounts={accounts}
+            connectionMessage={integrationMessage}
+            currentUser={user}
+            isLoading={isDetailLoading}
+            isSubmittingConnection={isSubmittingConnection}
+            onBackToOverview={clearSelectedAccount}
+            onConnectGoogle={handleConnectGoogle}
+            onDisconnectGoogle={handleDisconnectGoogle}
+            selectedAccount={selectedAccount}
+            selectedAccountSummary={selectedSummary}
+          />
+        ) : (
+          <ContentOverviewPanel
+            onSelectAccount={selectAccount}
+            onSelectPlatform={selectPlatform}
+            platforms={platforms}
+            selectedPlatform={selectedPlatform}
+          />
+        )}
       </section>
     </AppShell>
   );

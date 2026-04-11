@@ -46,3 +46,17 @@ test("requestJson normalizes urls that do not start with a slash", async () => {
     }),
   );
 });
+
+test("requestJson shows a friendly message when backend is unreachable", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    }),
+  );
+
+  await expect(requestJson("/api/v1/auth/login")).rejects.toMatchObject({
+    message: "目前無法連線到後端服務，請先確認 backend API 是否已啟動。",
+    status: 0,
+  });
+});

@@ -43,6 +43,14 @@ export function resetPassword(body, options) {
   });
 }
 
+export function startGoogleLogin(redirectTo = "/", options) {
+  return requestJson("/api/v1/auth/google/start", {
+    ...options,
+    body: { redirect_to: redirectTo },
+    method: "POST",
+  });
+}
+
 export function listPendingUsers(options) {
   return requestJson("/api/v1/admin/pending-users", options);
 }

@@ -4,6 +4,10 @@ export function getHealth(options) {
   return requestJson("/health", options);
 }
 
+export function getContentOverview(options) {
+  return requestJson("/api/v1/ui/content-overview", options);
+}
+
 export function listAccounts(options) {
   return requestJson("/api/v1/ui/accounts", options);
 }

@@ -7,7 +7,7 @@ export class HttpRequestError extends Error {
   }
 }
 
-function resolveApiUrl(pathname) {
+export function resolveApiUrl(pathname) {
   const normalizedPathname = pathname.startsWith("/") ? pathname : `/${pathname}`;
   const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
 
@@ -23,17 +23,33 @@ function resolveApiUrl(pathname) {
 }
 
 export async function requestJson(url, { body, headers, method = "GET", signal } = {}) {
-  const response = await fetch(resolveApiUrl(url), {
-    body: body === undefined ? undefined : JSON.stringify(body),
-    credentials: "include",
-    headers: {
-      accept: "application/json",
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-      ...headers,
-    },
-    method,
-    signal,
-  });
+  let response;
+
+  try {
+    response = await fetch(resolveApiUrl(url), {
+      body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...headers,
+      },
+      method,
+      signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw error;
+    }
+
+    throw new HttpRequestError(
+      "目前無法連線到後端服務，請先確認 backend API 是否已啟動。",
+      {
+        payload: null,
+        status: 0,
+      },
+    );
+  }
 
   const payload = await response.json().catch(() => ({}));
 

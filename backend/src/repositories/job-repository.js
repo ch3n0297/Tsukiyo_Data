@@ -78,4 +78,22 @@ export class JobRepository {
     matched.sort((left, right) => Date.parse(right.queuedAt) - Date.parse(left.queuedAt));
     return matched[0] ?? null;
   }
+
+  async deleteOlderThan(cutoffIso) {
+    const cutoffTime = Date.parse(cutoffIso);
+    let removedCount = 0;
+
+    await this.store.updateCollection(this.collection, async (records) => {
+      const kept = records.filter((record) => {
+        if (record.status === "queued" || record.status === "running") {
+          return true;
+        }
+        return Date.parse(record.finishedAt || record.queuedAt) >= cutoffTime;
+      });
+      removedCount = records.length - kept.length;
+      return kept;
+    });
+
+    return removedCount;
+  }
 }

@@ -1,38 +1,50 @@
 [
   {
     "refreshStatus": "success",
-    "systemMessage": "更新完成，共整理 1 筆內容資料。",
-    "lastRequestTime": "2026-03-19T15:54:52.439Z",
-    "lastSuccessTime": "2026-03-19T15:54:52.499Z",
+    "systemMessage": "更新完成，共整理 0 筆內容資料。",
+    "lastRequestTime": "2026-03-25T03:57:13.341Z",
+    "lastSuccessTime": "2026-03-25T03:57:13.542Z",
     "currentJobId": null,
     "sheetId": "marketing-sheet",
     "sheetRowKey": "row-instagram",
     "platform": "instagram",
     "accountId": "acct-instagram-demo",
-    "updatedAt": "2026-03-19T15:54:52.538Z"
+    "updatedAt": "2026-03-25T03:59:26.349Z"
   },
   {
     "refreshStatus": "success",
-    "systemMessage": "更新完成，共整理 1 筆內容資料。",
-    "lastRequestTime": "2026-03-19T15:54:52.465Z",
-    "lastSuccessTime": "2026-03-19T15:54:52.547Z",
+    "systemMessage": "更新完成，共整理 0 筆內容資料。",
+    "lastRequestTime": "2026-03-25T03:57:13.419Z",
+    "lastSuccessTime": "2026-03-25T03:57:13.740Z",
     "currentJobId": null,
     "sheetId": "marketing-sheet",
     "sheetRowKey": "row-facebook",
     "platform": "facebook",
     "accountId": "acct-facebook-demo",
-    "updatedAt": "2026-03-19T15:54:52.570Z"
+    "updatedAt": "2026-03-25T03:59:26.349Z"
   },
   {
     "refreshStatus": "success",
-    "systemMessage": "更新完成，共整理 1 筆內容資料。",
-    "lastRequestTime": "2026-03-19T15:54:52.503Z",
-    "lastSuccessTime": "2026-03-19T15:54:52.579Z",
+    "systemMessage": "更新完成，共整理 0 筆內容資料。",
+    "lastRequestTime": "2026-03-25T03:57:13.564Z",
+    "lastSuccessTime": "2026-03-25T03:57:13.865Z",
     "currentJobId": null,
     "sheetId": "marketing-sheet",
     "sheetRowKey": "row-tiktok",
     "platform": "tiktok",
     "accountId": "acct-tiktok-demo",
-    "updatedAt": "2026-03-19T15:54:52.590Z"
+    "updatedAt": "2026-03-25T03:59:26.349Z"
+  },
+  {
+    "refreshStatus": "error",
+    "systemMessage": "更新失敗：找不到對應的平台測試資料。",
+    "lastRequestTime": "2026-03-25T06:35:58.816Z",
+    "lastSuccessTime": null,
+    "currentJobId": null,
+    "sheetId": "sheet-1",
+    "sheetRowKey": "instagram-ig-google-1",
+    "platform": "instagram",
+    "accountId": "ig-google-1",
+    "updatedAt": "2026-03-25T06:35:58.863Z"
   }
 ]

@@ -6,33 +6,31 @@ function withTemporaryEnv(changes, run) {
   const original = {
     API_SHARED_SECRET: process.env.API_SHARED_SECRET,
     ALLOWED_CLIENT_IDS: process.env.ALLOWED_CLIENT_IDS,
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+    GOOGLE_TOKEN_ENCRYPTION_KEY: process.env.GOOGLE_TOKEN_ENCRYPTION_KEY,
+    NODE_ENV: process.env.NODE_ENV,
+    SESSION_COOKIE_SECURE: process.env.SESSION_COOKIE_SECURE,
   };
 
-  if (changes.API_SHARED_SECRET === undefined) {
-    delete process.env.API_SHARED_SECRET;
-  } else {
-    process.env.API_SHARED_SECRET = changes.API_SHARED_SECRET;
-  }
-
-  if (changes.ALLOWED_CLIENT_IDS === undefined) {
-    delete process.env.ALLOWED_CLIENT_IDS;
-  } else {
-    process.env.ALLOWED_CLIENT_IDS = changes.ALLOWED_CLIENT_IDS;
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
   }
 
   try {
     return run();
   } finally {
-    if (original.API_SHARED_SECRET === undefined) {
-      delete process.env.API_SHARED_SECRET;
-    } else {
-      process.env.API_SHARED_SECRET = original.API_SHARED_SECRET;
-    }
-
-    if (original.ALLOWED_CLIENT_IDS === undefined) {
-      delete process.env.ALLOWED_CLIENT_IDS;
-    } else {
-      process.env.ALLOWED_CLIENT_IDS = original.ALLOWED_CLIENT_IDS;
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     }
   }
 }
@@ -70,6 +68,52 @@ test("loadConfig keeps non-empty allowed client IDs only", () => {
     () => {
       const config = loadConfig();
       assert.deepEqual(config.allowedClientIds, ["demo-sheet", "apps-script"]);
+    },
+  );
+});
+
+test("loadConfig rejects partial Google OAuth configuration", () => {
+  withTemporaryEnv(
+    {
+      API_SHARED_SECRET: "local-dev-secret",
+      ALLOWED_CLIENT_IDS: "demo-sheet",
+      GOOGLE_CLIENT_ID: "client-id",
+      GOOGLE_CLIENT_SECRET: undefined,
+      GOOGLE_REDIRECT_URI: "http://localhost/callback",
+      GOOGLE_TOKEN_ENCRYPTION_KEY: undefined,
+    },
+    () => {
+      assert.throws(() => loadConfig(), /GOOGLE_CLIENT_ID \/ GOOGLE_CLIENT_SECRET/i);
+    },
+  );
+});
+
+test("loadConfig requires a token encryption key when Google OAuth is enabled", () => {
+  withTemporaryEnv(
+    {
+      API_SHARED_SECRET: "local-dev-secret",
+      ALLOWED_CLIENT_IDS: "demo-sheet",
+      GOOGLE_CLIENT_ID: "client-id",
+      GOOGLE_CLIENT_SECRET: "client-secret",
+      GOOGLE_REDIRECT_URI: "http://localhost/callback",
+      GOOGLE_TOKEN_ENCRYPTION_KEY: undefined,
+    },
+    () => {
+      assert.throws(() => loadConfig(), /GOOGLE_TOKEN_ENCRYPTION_KEY/i);
+    },
+  );
+});
+
+test("loadConfig requires secure session cookies in production", () => {
+  withTemporaryEnv(
+    {
+      API_SHARED_SECRET: "local-dev-secret",
+      ALLOWED_CLIENT_IDS: "demo-sheet",
+      NODE_ENV: "production",
+      SESSION_COOKIE_SECURE: "false",
+    },
+    () => {
+      assert.throws(() => loadConfig(), /SESSION_COOKIE_SECURE must be enabled in production/i);
     },
   );
 });

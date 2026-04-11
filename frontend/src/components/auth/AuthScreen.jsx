@@ -1,57 +1,33 @@
 import { useEffect, useState } from "react";
 
-function buildInitialState(mode) {
-  if (mode === "register") {
-    return {
-      displayName: "",
-      email: "",
-      password: "",
-    };
-  }
-
-  return {
-    email: "",
-    password: "",
-  };
-}
-
-function getTitle(mode) {
-  if (mode === "register") {
-    return "建立帳號";
-  }
-
-  if (mode === "forgot") {
-    return "忘記密碼";
-  }
-
-  if (mode === "reset") {
-    return "重設密碼";
-  }
-
-  return "登入";
-}
-
-function getDescription(mode) {
-  if (mode === "register") {
-    return "送出註冊申請後，需等待管理員核准才能登入查看儀表板。";
-  }
-
-  if (mode === "forgot") {
-    return "輸入 email 後，系統會以本地 stub 信箱產出重設指示。";
-  }
-
-  if (mode === "reset") {
-    return "請輸入新的密碼完成重設，完成後需重新登入。";
-  }
-
-  return "登入後即可查看受保護的社群資料中台儀表板。";
-}
-
-function PrimaryButton({ children, disabled, type = "submit" }) {
+function PrimaryButton({ children, disabled, type = "submit", onClick }) {
   return (
-    <button className="primary-action" disabled={disabled} type={type}>
+    <button className="primary-action" disabled={disabled} onClick={onClick} type={type}>
       {children}
     </button>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" style={{ marginRight: 8, verticalAlign: "middle" }}>
+      <path
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
+        fill="#4285F4"
+      />
+      <path
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+        fill="#34A853"
+      />
+      <path
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+        fill="#FBBC05"
+      />
+      <path
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+        fill="#EA4335"
+      />
+    </svg>
   );
 }
 
@@ -60,56 +36,25 @@ export function AuthScreen({
   error,
   isSubmitting,
   login,
+  loginWithGoogle,
   message,
-  register,
-  requestPasswordReset,
-  resetPassword,
   switchMode,
 }) {
-  const [form, setForm] = useState(() => buildInitialState(authView.mode));
+  const [showAdminLogin, setShowAdminLogin] = useState(authView.mode === "admin-password");
+  const [form, setForm] = useState({ email: "", password: "" });
 
   useEffect(() => {
-    setForm(buildInitialState(authView.mode));
-  }, [authView.mode]);
+    setForm({ email: "", password: "" });
+  }, [showAdminLogin]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
-    setForm((current) => ({
-      ...current,
-      [name]: value,
-    }));
+    setForm((current) => ({ ...current, [name]: value }));
   };
 
-  const handleSubmit = async (event) => {
+  const handleAdminLogin = async (event) => {
     event.preventDefault();
-
-    if (authView.mode === "register") {
-      await register({
-        display_name: form.displayName,
-        email: form.email,
-        password: form.password,
-      });
-      return;
-    }
-
-    if (authView.mode === "forgot") {
-      await requestPasswordReset({
-        email: form.email,
-      });
-      return;
-    }
-
-    if (authView.mode === "reset") {
-      await resetPassword({
-        password: form.password,
-      });
-      return;
-    }
-
-    await login({
-      email: form.email,
-      password: form.password,
-    });
+    await login({ email: form.email, password: form.password });
   };
 
   return (
@@ -118,100 +63,97 @@ export function AuthScreen({
         <div className="panel-header panel-header--stacked">
           <div>
             <p className="eyebrow">身份驗證</p>
-            <h2>{getTitle(authView.mode)}</h2>
+            <h2>{showAdminLogin ? "管理員密碼登入" : "登入"}</h2>
           </div>
-          <p className="muted">{getDescription(authView.mode)}</p>
+          <p className="muted">
+            {showAdminLogin
+              ? "以管理員 Email 與密碼登入系統。"
+              : "使用 Google 帳號登入即可查看受保護的社群資料中台儀表板。"}
+          </p>
         </div>
 
         {message ? <section className="banner banner--success">{message}</section> : null}
         {error ? <section className="banner banner--error">{error}</section> : null}
 
-        <form className="auth-form" onSubmit={(event) => void handleSubmit(event)}>
-          {authView.mode === "register" ? (
-            <label className="field">
-              <span>顯示名稱</span>
-              <input
-                autoComplete="name"
-                name="displayName"
-                onChange={handleChange}
-                placeholder="例如：王小明"
-                required
-                value={form.displayName ?? ""}
-              />
-            </label>
-          ) : null}
-
-          {authView.mode !== "reset" ? (
+        {showAdminLogin ? (
+          <form className="auth-form" onSubmit={(event) => void handleAdminLogin(event)}>
             <label className="field">
               <span>Email</span>
               <input
                 autoComplete="email"
                 name="email"
                 onChange={handleChange}
-                placeholder="you@example.com"
+                placeholder="admin@example.com"
                 required
                 type="email"
-                value={form.email ?? ""}
+                value={form.email}
               />
             </label>
-          ) : null}
 
-          <label className="field">
-            <span>{authView.mode === "reset" ? "新密碼" : "密碼"}</span>
-            <input
-              autoComplete={authView.mode === "reset" ? "new-password" : "current-password"}
-              name="password"
-              onChange={handleChange}
-              placeholder="至少 12 個字元"
-              required={authView.mode !== "forgot"}
-              type="password"
-              value={form.password ?? ""}
-            />
-          </label>
+            <label className="field">
+              <span>密碼</span>
+              <input
+                autoComplete="current-password"
+                name="password"
+                onChange={handleChange}
+                placeholder="至少 12 個字元"
+                required
+                type="password"
+                value={form.password}
+              />
+            </label>
 
-          <PrimaryButton disabled={isSubmitting}>
-            {isSubmitting ? "處理中..." : authView.mode === "register"
-              ? "送出註冊申請"
-              : authView.mode === "forgot"
-                ? "送出重設指示"
-                : authView.mode === "reset"
-                  ? "重設密碼"
-                  : "登入"}
-          </PrimaryButton>
-        </form>
+            <PrimaryButton disabled={isSubmitting}>
+              {isSubmitting ? "處理中..." : "登入"}
+            </PrimaryButton>
+          </form>
+        ) : (
+          <div className="auth-form">
+            <PrimaryButton
+              disabled={isSubmitting}
+              onClick={() => void loginWithGoogle()}
+              type="button"
+            >
+              <GoogleIcon />
+              {isSubmitting ? "正在跳轉至 Google..." : "以 Google 帳號登入"}
+            </PrimaryButton>
+          </div>
+        )}
 
         <div className="auth-links">
-          {authView.mode !== "login" ? (
-            <button className="text-action" onClick={() => switchMode("login")} type="button">
-              返回登入
+          {showAdminLogin ? (
+            <button
+              className="text-action"
+              onClick={() => setShowAdminLogin(false)}
+              type="button"
+            >
+              返回 Google 登入
             </button>
-          ) : null}
-          {authView.mode !== "register" ? (
-            <button className="text-action" onClick={() => switchMode("register")} type="button">
-              註冊新帳號
+          ) : (
+            <button
+              className="text-action"
+              onClick={() => setShowAdminLogin(true)}
+              type="button"
+            >
+              管理員密碼登入
             </button>
-          ) : null}
-          {authView.mode !== "forgot" && authView.mode !== "reset" ? (
-            <button className="text-action" onClick={() => switchMode("forgot")} type="button">
-              忘記密碼
-            </button>
-          ) : null}
+          )}
         </div>
       </section>
 
       <section className="panel auth-panel auth-panel--secondary">
         <div className="panel-header panel-header--stacked">
           <div>
-            <p className="eyebrow">首版規則</p>
-            <h2>登入系統說明</h2>
+            <p className="eyebrow">登入說明</p>
+            <h2>系統認證方式</h2>
           </div>
         </div>
 
         <ul className="auth-notes">
-          <li>本系統採 Email 與密碼登入，登入後以 HttpOnly Cookie 維持 session。</li>
-          <li>新帳號註冊後會先進入待審狀態，需由管理員核准後才可登入。</li>
-          <li>忘記密碼流程目前以本地 stub 信箱輸出，方便開發與測試。</li>
-          <li>Google Sheet 與 Apps Script 的既有簽章流程不受這套登入系統影響。</li>
+          <li>本系統使用 Google 帳號登入，首次登入將自動建立帳號。</li>
+          <li>登入後以 HttpOnly Cookie 維持 session，無需額外管理密碼。</li>
+          <li>管理員可使用 Email/密碼作為備援登入方式。</li>
+          <li>Google Sheet 與 Apps Script 的既有簽章流程不受影響。</li>
         </ul>
       </section>
     </section>

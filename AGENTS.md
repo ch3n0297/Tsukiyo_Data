@@ -1,4 +1,4 @@
-# Social-Media-Fetcher_spec-kit Development Guidelines
+# Tsukiyo_Data Development Guidelines
 
 Auto-generated from all feature plans. Last updated: 2026-03-19
 

@@ -1,0 +1,9 @@
+[
+  {
+    "id": "2003c9ed-c0e2-4672-948f-980f8424905e",
+    "eventType": "google.sheets.authorization_started",
+    "actorUserId": "admin-1",
+    "accountConfigId": "instagram-ig-google-1",
+    "createdAt": "2026-03-25T04:00:11.535Z"
+  }
+]

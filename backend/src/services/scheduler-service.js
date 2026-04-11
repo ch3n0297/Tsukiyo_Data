@@ -1,6 +1,7 @@
 export class SchedulerService {
-  constructor({ scheduledSyncService, intervalMs, logger }) {
+  constructor({ scheduledSyncService, dataRetentionService, intervalMs, logger }) {
     this.scheduledSyncService = scheduledSyncService;
+    this.dataRetentionService = dataRetentionService;
     this.intervalMs = intervalMs;
     this.logger = logger;
     this.timer = null;
@@ -28,6 +29,7 @@ export class SchedulerService {
       await this.scheduledSyncService.enqueueAllActiveAccounts({
         requestedBy: "scheduler",
       });
+      await this.dataRetentionService?.purgeExpired();
     } catch (error) {
       this.logger.error("Scheduled sync tick failed", { error });
     } finally {

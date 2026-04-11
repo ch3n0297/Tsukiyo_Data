@@ -1,0 +1,15 @@
+[
+  {
+    "id": "924120cf-3c0c-404c-8c09-83e23178d070",
+    "accountConfigId": "instagram-ig-google-1",
+    "authorizedEmail": "ops@example.com",
+    "authorizedBy": "admin-1",
+    "accessTokenEncrypted": "eyJhbGciOiJhZXMtMjU2LWdjbSIsIml2IjoidHJXenBrN1psY21oTWdacyIsInRhZyI6IlBaMUlnazNmUXNpZWdDcjQzTFhnTVEiLCJkYXRhIjoiZFBlTCJ9",
+    "refreshTokenEncrypted": "eyJhbGciOiJhZXMtMjU2LWdjbSIsIml2IjoiUkZDTE1JUC1VTEl4dnBpRyIsInRhZyI6InR0Mmk0QkdfamNlbXpSVm9rOVlYSlEiLCJkYXRhIjoicmQxZGFBIn0",
+    "expiresAt": "2026-03-25T05:00:11.554Z",
+    "tokenRefreshedAt": "2026-03-25T04:00:11.554Z",
+    "createdAt": "2026-03-25T04:00:11.554Z",
+    "updatedAt": "2026-03-25T04:00:11.554Z",
+    "lastError": null
+  }
+]

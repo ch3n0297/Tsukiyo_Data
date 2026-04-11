@@ -4,62 +4,23 @@
     "sheetRowKey": "row-instagram",
     "platform": "instagram",
     "accountId": "acct-instagram-demo",
-    "syncedAt": "2026-03-19T15:54:52.517Z",
-    "rows": [
-      {
-        "content_id": "ig-reel-001",
-        "content_type": "reel",
-        "published_at": "2026-03-16T09:00:00.000Z",
-        "caption": "Launch highlight reel",
-        "url": "https://instagram.example.com/p/ig-reel-001",
-        "views": 1420,
-        "likes": 130,
-        "comments": 14,
-        "shares": 9,
-        "data_status": "fresh"
-      }
-    ]
+    "syncedAt": "2026-03-25T03:57:13.616Z",
+    "rows": []
   },
   {
     "sheetId": "marketing-sheet",
     "sheetRowKey": "row-facebook",
     "platform": "facebook",
     "accountId": "acct-facebook-demo",
-    "syncedAt": "2026-03-19T15:54:52.559Z",
-    "rows": [
-      {
-        "content_id": "fb-video-001",
-        "content_type": "video",
-        "published_at": "2026-03-15T10:30:00.000Z",
-        "caption": "Campaign recap video",
-        "url": "https://facebook.example.com/posts/fb-video-001",
-        "views": 980,
-        "likes": 77,
-        "comments": 11,
-        "shares": 4,
-        "data_status": "fresh"
-      }
-    ]
+    "syncedAt": "2026-03-25T03:57:13.784Z",
+    "rows": []
   },
   {
     "sheetId": "marketing-sheet",
     "sheetRowKey": "row-tiktok",
     "platform": "tiktok",
     "accountId": "acct-tiktok-demo",
-    "syncedAt": "2026-03-19T15:54:52.589Z",
-    "rows": [
-      {
-        "content_id": "tt-video-001",
-        "content_type": "video",
-        "published_at": "2026-03-17T13:45:00.000Z",
-        "caption": "Trend response clip",
-        "url": "https://tiktok.example.com/v/tt-video-001",
-        "views": 3200,
-        "likes": 244,
-        "comments": 28,
-        "shares": 19,
-        "data_status": "fresh"
-      }
-    ]
+    "syncedAt": "2026-03-25T03:57:13.908Z",
+    "rows": []
   }
 ]

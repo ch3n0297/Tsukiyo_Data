@@ -1,1 +1,39 @@
-[]
+[
+  {
+    "id": "fed73eae-2245-44ed-ae2b-aabe3574b1d0",
+    "email": "hjc@local.com",
+    "displayName": "Admin",
+    "passwordHash": "scrypt$96e8ce65a397b181a05ad861ae649ff0$814f59cd5f90539d3c3660013be5e090d442204ec77190a58091f27b4289b8bab774877fca9ae4201529441c64f7ab99e792665d69d247ab4e89ee30a811bf30",
+    "role": "admin",
+    "status": "active",
+    "tenantKey": "system",
+    "approvedAt": "2026-03-24T02:55:37.805Z",
+    "approvedBy": "bootstrap-admin",
+    "rejectedAt": null,
+    "rejectedBy": null,
+    "lastLoginAt": "2026-03-24T03:05:42.031Z",
+    "createdAt": "2026-03-24T02:55:37.805Z",
+    "updatedAt": "2026-03-24T03:05:42.031Z"
+  },
+  {
+    "id": "a472a215-1fd2-45c1-bc9a-77423a659a98",
+    "email": "admin@example.com",
+    "displayName": "系統管理員",
+    "passwordHash": "scrypt$0a0653f68f1095c2d937caa890e132f8$7184f26587fb65c1d83d3bfb6e13d33bdd47deeb29886cf67f4069baeb661191f29f61eb15cc4fb0941230ee827b3d23f8b1d58144498534302025203bb02ab9",
+    "authMethods": [
+      "password"
+    ],
+    "googleSub": null,
+    "googleLinkedAt": null,
+    "role": "admin",
+    "status": "active",
+    "tenantKey": "system",
+    "approvedAt": "2026-03-25T03:59:04.166Z",
+    "approvedBy": "bootstrap-admin",
+    "rejectedAt": null,
+    "rejectedBy": null,
+    "lastLoginAt": null,
+    "createdAt": "2026-03-25T03:59:04.166Z",
+    "updatedAt": "2026-03-25T04:00:11.444Z"
+  }
+]

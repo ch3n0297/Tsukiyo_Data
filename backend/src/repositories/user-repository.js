@@ -4,6 +4,10 @@ function normalizeEmail(email) {
   return typeof email === "string" ? email.trim().toLowerCase() : "";
 }
 
+function normalizeGoogleSub(googleSub) {
+  return typeof googleSub === "string" && googleSub.trim() !== "" ? googleSub.trim() : "";
+}
+
 export class UserRepository {
   constructor(store) {
     this.store = store;
@@ -28,6 +32,17 @@ export class UserRepository {
     const normalizedEmail = normalizeEmail(email);
     const users = await this.listAll();
     return users.find((user) => normalizeEmail(user.email) === normalizedEmail) ?? null;
+  }
+
+  async findByGoogleSub(googleSub) {
+    const normalizedGoogleSub = normalizeGoogleSub(googleSub);
+
+    if (!normalizedGoogleSub) {
+      return null;
+    }
+
+    const users = await this.listAll();
+    return users.find((user) => normalizeGoogleSub(user.googleSub) === normalizedGoogleSub) ?? null;
   }
 
   async create(user) {

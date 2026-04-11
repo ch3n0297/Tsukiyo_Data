@@ -17,6 +17,10 @@ function sortAccounts(left, right) {
   );
 }
 
+function sortPlatforms(left, right) {
+  return left.localeCompare(right);
+}
+
 function indexByAccountKey(records) {
   const map = new Map();
 
@@ -25,6 +29,24 @@ function indexByAccountKey(records) {
   }
 
   return map;
+}
+
+function asNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toTimestamp(value) {
+  const parsed = Date.parse(value ?? "");
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function sortContentItems(left, right) {
+  return (
+    asNumber(right.views) - asNumber(left.views) ||
+    toTimestamp(right.published_at) - toTimestamp(left.published_at) ||
+    String(left.content_id ?? "").localeCompare(String(right.content_id ?? ""))
+  );
 }
 
 function buildLatestOutput(outputSnapshot, { includeRows = false } = {}) {
@@ -56,12 +78,15 @@ function buildUiAccount(accountConfig, statusSnapshot, outputSnapshot, { include
     id: accountConfig.id,
     accountKey: makeAccountKey(accountConfig.platform, accountConfig.accountId),
     clientName: accountConfig.clientName,
+    tenantKey: accountConfig.tenantKey ?? null,
     platform: accountConfig.platform,
     accountId: accountConfig.accountId,
     refreshDays: accountConfig.refreshDays,
     isActive: Boolean(accountConfig.isActive),
     sheetId: accountConfig.sheetId,
+    allowedSpreadsheetId: accountConfig.allowedSpreadsheetId ?? accountConfig.sheetId ?? null,
     sheetRowKey: accountConfig.sheetRowKey,
+    googleConnection: accountConfig.googleConnection ?? null,
     refreshStatus: statusSnapshot?.refreshStatus ?? accountConfig.refreshStatus,
     systemMessage: statusSnapshot?.systemMessage ?? accountConfig.systemMessage,
     lastRequestTime: statusSnapshot?.lastRequestTime ?? accountConfig.lastRequestTime ?? null,
@@ -72,29 +97,99 @@ function buildUiAccount(accountConfig, statusSnapshot, outputSnapshot, { include
   };
 }
 
+function buildContentItem(row, account, syncedAt) {
+  return {
+    accountId: account.accountId,
+    accountKey: account.accountKey,
+    caption: row.caption ?? null,
+    clientName: account.clientName,
+    comments: asNumber(row.comments),
+    content_id: row.content_id ?? null,
+    content_type: row.content_type ?? null,
+    data_status: row.data_status ?? null,
+    likes: asNumber(row.likes),
+    platform: account.platform,
+    published_at: row.published_at ?? null,
+    shares: asNumber(row.shares),
+    syncedAt,
+    url: row.url ?? null,
+    views: asNumber(row.views),
+  };
+}
+
+function buildPlatformGroup(platform, accounts, outputByKey) {
+  const items = accounts
+    .flatMap((account) => {
+      const outputSnapshot = outputByKey.get(account.accountKey);
+      const rows = Array.isArray(outputSnapshot?.rows) ? outputSnapshot.rows : [];
+
+      return rows.map((row) => buildContentItem(row, account, outputSnapshot?.syncedAt ?? null));
+    })
+    .sort(sortContentItems);
+
+  const totalViews = items.reduce((sum, item) => sum + asNumber(item.views), 0);
+  const lastPublishedAt = items.reduce((latestValue, item) => {
+    if (toTimestamp(item.published_at) > toTimestamp(latestValue)) {
+      return item.published_at;
+    }
+
+    return latestValue;
+  }, null);
+
+  return {
+    platform,
+    accountCount: accounts.length,
+    contentCount: items.length,
+    totalViews,
+    lastPublishedAt,
+    previewItems: items.slice(0, 5),
+    items,
+  };
+}
+
 export class UiDashboardService {
-  constructor({ accountRepository, sheetSnapshotRepository, clock }) {
+  constructor({ accountRepository, config, googleConnectionRepository, sheetSnapshotRepository, clock }) {
     this.accountRepository = accountRepository;
+    this.config = config;
+    this.googleConnectionRepository = googleConnectionRepository;
     this.sheetSnapshotRepository = sheetSnapshotRepository;
     this.clock = clock;
   }
 
-  async listAccounts() {
-    const { accounts, statusByKey, outputByKey } = await this.#loadSnapshotMaps();
+  async listAccounts(currentUser) {
+    const { uiAccounts } = await this.#loadSnapshotMaps(currentUser);
 
     return {
       generatedAt: this.clock().toISOString(),
       capabilities: UI_CAPABILITIES,
-      accounts: [...accounts].sort(sortAccounts).map((account) => {
-        const accountKey = makeAccountKey(account.platform, account.accountId);
-
-        return buildUiAccount(account, statusByKey.get(accountKey), outputByKey.get(accountKey));
-      }),
+      accounts: uiAccounts,
     };
   }
 
-  async getAccountDetail({ platform, accountId }) {
-    const { accounts, statusByKey, outputByKey } = await this.#loadSnapshotMaps();
+  async getContentOverview(currentUser) {
+    const { accounts, outputByKey, uiAccounts } = await this.#loadSnapshotMaps(currentUser);
+    const accountsByPlatform = new Map();
+
+    for (const account of uiAccounts) {
+      const currentAccounts = accountsByPlatform.get(account.platform) ?? [];
+      currentAccounts.push(account);
+      accountsByPlatform.set(account.platform, currentAccounts);
+    }
+
+    return {
+      generatedAt: this.clock().toISOString(),
+      capabilities: UI_CAPABILITIES,
+      accounts: uiAccounts,
+      platforms: [...new Set(accounts.map((account) => account.platform))]
+        .sort(sortPlatforms)
+        .map((platform) =>
+          buildPlatformGroup(platform, accountsByPlatform.get(platform) ?? [], outputByKey),
+        ),
+    };
+  }
+
+  async getAccountDetail({ platform, accountId }, currentUser) {
+    const { accounts, statusByKey, outputByKey } = await this.#loadSnapshotMaps(currentUser);
     const account = accounts.find(
       (entry) => entry.platform === platform && entry.accountId === accountId,
     );
@@ -114,17 +209,72 @@ export class UiDashboardService {
     };
   }
 
-  async #loadSnapshotMaps() {
-    const [accounts, statuses, outputs] = await Promise.all([
+  async #loadSnapshotMaps(currentUser) {
+    const [storedAccounts, statuses, outputs, googleConnections] = await Promise.all([
       this.accountRepository.listAll(),
       this.sheetSnapshotRepository.listStatuses(),
       this.sheetSnapshotRepository.listOutputs(),
+      this.googleConnectionRepository?.listAll?.() ?? [],
     ]);
+    const visibleAccounts = this.#filterAccountsForUser(storedAccounts, currentUser);
+    const connectionByAccountConfigId = new Map(
+      googleConnections.map((connection) => [connection.accountConfigId, connection]),
+    );
+
+    const accounts = visibleAccounts.map((account) => ({
+      ...account,
+      googleConnection: this.#buildConnectionSummary(account, connectionByAccountConfigId.get(account.id)),
+    }));
+    const statusByKey = indexByAccountKey(statuses);
+    const outputByKey = indexByAccountKey(outputs);
+    const uiAccounts = [...accounts]
+      .sort(sortAccounts)
+      .map((account) => {
+        const accountKey = makeAccountKey(account.platform, account.accountId);
+
+        return buildUiAccount(account, statusByKey.get(accountKey), outputByKey.get(accountKey));
+      });
 
     return {
       accounts,
-      statusByKey: indexByAccountKey(statuses),
-      outputByKey: indexByAccountKey(outputs),
+      uiAccounts,
+      statusByKey,
+      outputByKey,
+    };
+  }
+
+  #filterAccountsForUser(accounts, currentUser) {
+    if (!currentUser || currentUser.role === "admin") {
+      return accounts;
+    }
+
+    if (!currentUser.tenantKey) {
+      return [];
+    }
+
+    return accounts.filter((account) => account.tenantKey === currentUser.tenantKey);
+  }
+
+  #buildConnectionSummary(accountConfig, connection) {
+    if (!connection) {
+      return {
+        allowedSpreadsheetId: accountConfig.allowedSpreadsheetId ?? accountConfig.sheetId ?? null,
+        authorizedEmail: null,
+        connectedAt: null,
+        lastErrorCode: null,
+        lastRefreshedAt: null,
+        status: this.config?.googleOauthEnabled ? "not_connected" : "disabled",
+      };
+    }
+
+    return {
+      allowedSpreadsheetId:
+        connection.allowedSpreadsheetId ?? accountConfig.allowedSpreadsheetId ?? accountConfig.sheetId ?? null,
+      authorizedEmail: connection.authorizedEmail ?? null,
+      connectedAt: connection.connectedAt ?? null,
+      lastErrorCode: connection.lastErrorCode ?? null,
+      lastRefreshedAt: connection.lastRefreshedAt ?? null,
+      status: connection.status ?? "active",
     };
   }
 }

@@ -11,3 +11,5 @@ backend/data/password-reset-tokens.json
 backend/data/outbox-messages.json
 tiktok-verify-site/
 Homework_rule.md
+.vscode/
+.remember/

@@ -1,5 +1,6 @@
 import { AccountFieldGrid } from "./AccountFieldGrid.jsx";
 import { EmptyState } from "./EmptyState.jsx";
+import { GoogleConnectionPanel } from "./GoogleConnectionPanel.jsx";
 import { LatestOutputTable } from "./LatestOutputTable.jsx";
 
 function getTitle(selectedAccount, selectedAccountSummary) {
@@ -14,7 +15,13 @@ function getTitle(selectedAccount, selectedAccountSummary) {
 
 export function AccountDetailPanel({
   accounts,
+  connectionMessage,
+  currentUser,
   isLoading,
+  isSubmittingConnection,
+  onBackToOverview,
+  onConnectGoogle,
+  onDisconnectGoogle,
   selectedAccount,
   selectedAccountSummary,
 }) {
@@ -30,6 +37,14 @@ export function AccountDetailPanel({
     content = (
       <>
         <AccountFieldGrid account={selectedAccount} />
+        <GoogleConnectionPanel
+          account={selectedAccount}
+          currentUser={currentUser}
+          isSubmitting={isSubmittingConnection}
+          message={connectionMessage}
+          onConnect={onConnectGoogle}
+          onDisconnect={onDisconnectGoogle}
+        />
         <LatestOutputTable latestOutput={selectedAccount.latestOutput} />
       </>
     );
@@ -42,6 +57,9 @@ export function AccountDetailPanel({
           <p className="eyebrow">選取帳號</p>
           <h2>{getTitle(selectedAccount, selectedAccountSummary)}</h2>
         </div>
+        <button className="secondary-action" onClick={onBackToOverview} type="button">
+          返回內容總覽
+        </button>
       </div>
 
       {content}

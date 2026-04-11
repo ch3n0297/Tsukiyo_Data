@@ -89,6 +89,7 @@ test("authenticated sessions protect UI APIs and can be logged out", async () =>
       method: "POST",
       headers: {
         cookie: login.cookie,
+        origin: "http://127.0.0.1:5173",
       },
     });
     const logoutJson = await logout.json();
@@ -142,6 +143,7 @@ test("forgot-password writes a reset link to outbox and reset invalidates old pa
       method: "POST",
       headers: {
         cookie: adminLogin.cookie,
+        origin: "http://127.0.0.1:5173",
       },
     });
     const approveJson = await approve.json();
@@ -178,6 +180,8 @@ test("forgot-password writes a reset link to outbox and reset invalidates old pa
     });
     assert.equal(reset.response.status, 200);
 
+    // Old password is invalid after reset (401), new password is valid but
+    // member password login is blocked (403 GOOGLE_LOGIN_REQUIRED).
     const oldLogin = await sendJsonRequest({
       baseUrl,
       pathName: "/api/v1/auth/login",
@@ -187,6 +191,7 @@ test("forgot-password writes a reset link to outbox and reset invalidates old pa
       },
     });
     assert.equal(oldLogin.response.status, 401);
+    assert.equal(oldLogin.json.error, "LOGIN_FAILED");
 
     const newLogin = await sendJsonRequest({
       baseUrl,
@@ -196,7 +201,61 @@ test("forgot-password writes a reset link to outbox and reset invalidates old pa
         password: "ResetPassword456!",
       },
     });
-    assert.equal(newLogin.response.status, 200);
+    assert.equal(newLogin.response.status, 403);
+    assert.equal(newLogin.json.error, "GOOGLE_LOGIN_REQUIRED");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("admin approval rejects requests from an untrusted origin", async () => {
+  const { cleanup, baseUrl } = await setupTestApp({
+    accounts: [createAccount({ platform: "instagram", accountId: "ig-auth-origin-1" })],
+    fixtures: {
+      "instagram--ig-auth-origin-1.json": { items: [] },
+    },
+  });
+
+  try {
+    const register = await sendJsonRequest({
+      baseUrl,
+      pathName: "/api/v1/auth/register",
+      body: {
+        display_name: "跨站待審",
+        email: "origin-check@example.com",
+        password: "OriginPassword123!",
+      },
+    });
+    assert.equal(register.response.status, 201);
+
+    const adminLogin = await loginAsAdmin(baseUrl);
+    const pendingUsers = await fetch(`${baseUrl}/api/v1/admin/pending-users`, {
+      headers: {
+        cookie: adminLogin.cookie,
+      },
+    });
+    const pendingUsersJson = await pendingUsers.json();
+    const targetUser = pendingUsersJson.users.find((user) => user.email === "origin-check@example.com");
+    assert.ok(targetUser);
+
+    const approve = await fetch(`${baseUrl}/api/v1/admin/pending-users/${targetUser.id}/approve`, {
+      method: "POST",
+      headers: {
+        cookie: adminLogin.cookie,
+        origin: "https://evil.example.com",
+      },
+    });
+    const approveJson = await approve.json();
+    assert.equal(approve.status, 403);
+    assert.equal(approveJson.error, "UNTRUSTED_ORIGIN");
+
+    const stillPending = await fetch(`${baseUrl}/api/v1/admin/pending-users`, {
+      headers: {
+        cookie: adminLogin.cookie,
+      },
+    });
+    const stillPendingJson = await stillPending.json();
+    assert.ok(stillPendingJson.users.some((user) => user.id === targetUser.id));
   } finally {
     await cleanup();
   }

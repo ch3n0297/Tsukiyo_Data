@@ -1,5 +1,11 @@
 import { toErrorResponse } from "../lib/errors.js";
-import { getRequestOrigin, readJsonRequest, sendJson, setResponseCookie } from "../lib/http.js";
+import {
+  getRequestOrigin,
+  readJsonRequest,
+  requireTrustedBrowserOrigin,
+  sendJson,
+  setResponseCookie,
+} from "../lib/http.js";
 import {
   validateForgotPasswordPayload,
   validateLoginPayload,
@@ -47,6 +53,7 @@ export async function handleLoginRoute({ req, res, services, config }) {
 
 export async function handleLogoutRoute({ req, res, services }) {
   try {
+    requireTrustedBrowserOrigin(req, services.userAuthService.config);
     await services.userAuthService.logoutByRequest(req);
     setResponseCookie(res, services.userAuthService.createClearedSessionCookie());
     sendJson(res, 200, {
@@ -129,6 +136,7 @@ export async function handlePendingUsersRoute({ req, res, services }) {
 
 export async function handleApproveUserRoute({ req, res, services, params }) {
   try {
+    requireTrustedBrowserOrigin(req, services.userAuthService.config);
     const context = await services.userAuthService.requireAdminUser(req);
     setResponseCookie(res, services.userAuthService.createSessionCookie(context.session.id));
     const user = await services.userApprovalService.approveUser({
@@ -148,6 +156,7 @@ export async function handleApproveUserRoute({ req, res, services, params }) {
 
 export async function handleRejectUserRoute({ req, res, services, params }) {
   try {
+    requireTrustedBrowserOrigin(req, services.userAuthService.config);
     const context = await services.userAuthService.requireAdminUser(req);
     setResponseCookie(res, services.userAuthService.createSessionCookie(context.session.id));
     const user = await services.userApprovalService.rejectUser({

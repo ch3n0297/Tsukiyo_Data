@@ -1,0 +1,15 @@
+[
+  {
+    "id": "0eb78a07-9694-4e42-b9f2-d5d8882a22f0",
+    "purpose": "sheets",
+    "codeVerifier": "48oy0vYLRdKIfGd9TZoGnQKj9PllG41pf0mK5pYTtbc",
+    "codeChallenge": "-MghuN8sibsKneXAwaETkqZlT7_K8r_WIoU7Gs-9Nqc",
+    "metadata": {
+      "accountConfigId": "instagram-ig-google-1",
+      "redirectTo": "/",
+      "actorUserId": "admin-1"
+    },
+    "createdAt": "2026-03-25T03:59:26.436Z",
+    "expiresAt": "2026-03-25T04:09:26.436Z"
+  }
+]

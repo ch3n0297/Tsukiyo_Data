@@ -5,6 +5,7 @@ import { readCookies, serializeCookie } from "../lib/http.js";
 import { normalizeEmailAddress } from "./user-auth-validation-service.js";
 
 const scryptAsync = promisify(crypto.scrypt);
+const AUTH_METHODS = Object.freeze(["password", "google"]);
 
 function createRandomToken(byteLength = 32) {
   return crypto.randomBytes(byteLength).toString("base64url");
@@ -12,6 +13,40 @@ function createRandomToken(byteLength = 32) {
 
 function hashOpaqueToken(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function readTrimmedString(value) {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
+function normalizeAuthMethods(user) {
+  const methods = new Set(
+    Array.isArray(user?.authMethods)
+      ? user.authMethods.filter((value) => AUTH_METHODS.includes(value))
+      : [],
+  );
+
+  if (typeof user?.passwordHash === "string" && user.passwordHash !== "") {
+    methods.add("password");
+  }
+
+  if (readTrimmedString(user?.googleSub)) {
+    methods.add("google");
+  }
+
+  return AUTH_METHODS.filter((value) => methods.has(value));
+}
+
+function mergeAuthMethods(user, nextMethods = []) {
+  const methods = new Set(normalizeAuthMethods(user));
+
+  for (const method of nextMethods) {
+    if (AUTH_METHODS.includes(method)) {
+      methods.add(method);
+    }
+  }
+
+  return AUTH_METHODS.filter((value) => methods.has(value));
 }
 
 function toPublicUser(user) {
@@ -25,9 +60,12 @@ function toPublicUser(user) {
     displayName: user.displayName,
     role: user.role,
     status: user.status,
+    tenantKey: user.tenantKey ?? null,
     approvedAt: user.approvedAt ?? null,
     approvedBy: user.approvedBy ?? null,
     lastLoginAt: user.lastLoginAt ?? null,
+    authMethods: normalizeAuthMethods(user),
+    googleLinkedAt: user.googleLinkedAt ?? null,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -95,12 +133,16 @@ export class UserAuthService {
       email: normalizedEmail,
       displayName,
       passwordHash: await hashPassword(password),
+      authMethods: ["password"],
+      googleSub: null,
+      googleLinkedAt: null,
       role: "member",
       status: "pending",
       approvedAt: null,
       approvedBy: null,
       rejectedAt: null,
       rejectedBy: null,
+      tenantKey: null,
       lastLoginAt: null,
       createdAt: now,
       updatedAt: now,
@@ -119,27 +161,107 @@ export class UserAuthService {
       throw new HttpError(401, "LOGIN_FAILED", "登入失敗，請確認 email 與密碼是否正確。");
     }
 
-    if (user.status === "pending") {
-      throw new HttpError(403, "USER_PENDING", "帳號尚待管理員核准，暫時無法登入。");
+    this.#assertUserStatusAllowsLogin(user);
+
+    if (user.role !== "admin") {
+      throw new HttpError(403, "GOOGLE_LOGIN_REQUIRED", "一般使用者請改用 Google 登入。");
     }
 
-    if (user.status === "rejected") {
-      throw new HttpError(403, "USER_REJECTED", "此帳號註冊申請已被拒絕，請聯絡管理員。");
+    return this.createAuthenticatedSession(user.id);
+  }
+
+  async loginWithGoogleIdentity({ displayName, email, googleSub, tenantKey }) {
+    const normalizedEmail = normalizeEmailAddress(email);
+    const normalizedGoogleSub = readTrimmedString(googleSub);
+    const normalizedDisplayName = readTrimmedString(displayName) ?? normalizedEmail;
+
+    if (!normalizedGoogleSub) {
+      throw new HttpError(400, "GOOGLE_SUB_REQUIRED", "Google identity 缺少必要的使用者識別。");
     }
 
-    if (user.status !== "active") {
-      throw new HttpError(403, "USER_DISABLED", "此帳號目前已停用，請聯絡管理員。");
+    const existingByGoogleSub = await this.userRepository.findByGoogleSub(normalizedGoogleSub);
+    const existingByEmail = await this.userRepository.findByEmail(normalizedEmail);
+
+    if (
+      existingByGoogleSub &&
+      existingByEmail &&
+      existingByGoogleSub.id !== existingByEmail.id
+    ) {
+      throw new HttpError(
+        409,
+        "GOOGLE_IDENTITY_CONFLICT",
+        "此 Google 帳號與既有使用者資料衝突，請聯絡管理員處理。",
+      );
     }
 
-    const session = await this.#createSession(user.id);
+    const targetUser = existingByGoogleSub ?? existingByEmail;
     const now = this.clock().toISOString();
 
-    await this.userRepository.updateById(user.id, {
+    if (!targetUser) {
+      if (!readTrimmedString(tenantKey)) {
+        throw new HttpError(
+          409,
+          "GOOGLE_LOGIN_TENANT_REQUIRED",
+          "系統尚未為此 Google 帳號指派租戶，請先由管理員完成設定。",
+        );
+      }
+
+      const user = {
+        id: crypto.randomUUID(),
+        email: normalizedEmail,
+        displayName: normalizedDisplayName,
+        passwordHash: null,
+        authMethods: ["google"],
+        googleSub: normalizedGoogleSub,
+        googleLinkedAt: now,
+        role: "member",
+        status: "active",
+        approvedAt: now,
+        approvedBy: "google-login",
+        rejectedAt: null,
+        rejectedBy: null,
+        tenantKey,
+        lastLoginAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await this.userRepository.create(user);
+      return this.createAuthenticatedSession(user.id);
+    }
+
+    if (readTrimmedString(targetUser.googleSub) && targetUser.googleSub !== normalizedGoogleSub) {
+      throw new HttpError(
+        409,
+        "GOOGLE_IDENTITY_CONFLICT",
+        "此 Google 帳號與既有使用者資料衝突，請聯絡管理員處理。",
+      );
+    }
+
+    await this.userRepository.updateById(targetUser.id, {
+      authMethods: mergeAuthMethods(targetUser, ["google"]),
+      displayName: readTrimmedString(targetUser.displayName) ?? normalizedDisplayName,
+      email: normalizedEmail,
+      googleLinkedAt: targetUser.googleLinkedAt ?? now,
+      googleSub: normalizedGoogleSub,
+      updatedAt: now,
+    });
+
+    const nextUser = await this.userRepository.findById(targetUser.id);
+    this.#assertUserStatusAllowsLogin(nextUser ?? targetUser);
+    return this.createAuthenticatedSession(targetUser.id);
+  }
+
+  async createAuthenticatedSession(userId) {
+    const session = await this.#createSession(userId);
+    const now = this.clock().toISOString();
+
+    await this.userRepository.updateById(userId, {
       lastLoginAt: now,
       updatedAt: now,
     });
 
-    const nextUser = await this.userRepository.findById(user.id);
+    const nextUser = await this.userRepository.findById(userId);
 
     return {
       session,
@@ -268,11 +390,14 @@ export class UserAuthService {
 
     if (existingUser) {
       await this.userRepository.updateById(existingUser.id, {
+        authMethods: mergeAuthMethods(existingUser, ["password"]),
         displayName: this.config.bootstrapAdminName,
         email: normalizedEmail,
+        googleLinkedAt: existingUser.googleLinkedAt ?? null,
         passwordHash,
         role: "admin",
         status: "active",
+        tenantKey: existingUser.tenantKey ?? "system",
         approvedAt: existingUser.approvedAt ?? now,
         approvedBy: existingUser.approvedBy ?? "bootstrap-admin",
         updatedAt: now,
@@ -286,8 +411,12 @@ export class UserAuthService {
       email: normalizedEmail,
       displayName: this.config.bootstrapAdminName,
       passwordHash,
+      authMethods: ["password"],
+      googleSub: null,
+      googleLinkedAt: null,
       role: "admin",
       status: "active",
+      tenantKey: "system",
       approvedAt: now,
       approvedBy: "bootstrap-admin",
       rejectedAt: null,
@@ -313,6 +442,20 @@ export class UserAuthService {
 
     await this.sessionRepository.create(session);
     return session;
+  }
+
+  #assertUserStatusAllowsLogin(user) {
+    if (user.status === "pending") {
+      throw new HttpError(403, "USER_PENDING", "帳號尚待管理員核准，暫時無法登入。");
+    }
+
+    if (user.status === "rejected") {
+      throw new HttpError(403, "USER_REJECTED", "此帳號註冊申請已被拒絕，請聯絡管理員。");
+    }
+
+    if (user.status !== "active") {
+      throw new HttpError(403, "USER_DISABLED", "此帳號目前已停用，請聯絡管理員。");
+    }
   }
 }
 

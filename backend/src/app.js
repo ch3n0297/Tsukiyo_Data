@@ -1,13 +1,16 @@
 import Fastify from "fastify";
 import fastifyCors from "@fastify/cors";
 import { loadConfig } from "./config.js";
-import { FileSheetGateway } from "./adapters/sheets/file-sheet-gateway.js";
+import { GoogleSheetGateway } from "./adapters/sheets/google-sheet-gateway.js";
 import { createPlatformRegistry } from "./adapters/platforms/platform-registry.js";
 import { toErrorResponse } from "./lib/errors.js";
 import { FileStore } from "./lib/fs-store.js";
 import { sendJson } from "./lib/http.js";
 import { AccountConfigRepository } from "./repositories/account-config-repository.js";
+import { AuditLogRepository } from "./repositories/audit-log-repository.js";
+import { GoogleConnectionRepository } from "./repositories/google-connection-repository.js";
 import { JobRepository } from "./repositories/job-repository.js";
+import { OauthStateRepository } from "./repositories/oauth-state-repository.js";
 import { OutboxMessageRepository } from "./repositories/outbox-message-repository.js";
 import { NormalizedRecordRepository } from "./repositories/normalized-record-repository.js";
 import { PasswordResetTokenRepository } from "./repositories/password-reset-token-repository.js";
@@ -26,22 +29,40 @@ import {
   handleRejectUserRoute,
   handleResetPasswordRoute,
 } from "./routes/auth-routes.js";
+import {
+  handleGoogleAuthorizationCallbackRoute,
+  handleGoogleAuthorizationStartRoute,
+  handleGoogleConnectionDisconnectRoute,
+  handleGoogleConnectionStatusRoute,
+} from "./routes/google-integration-routes.js";
+import {
+  handleGoogleLoginCallbackRoute,
+  handleGoogleLoginStartRoute,
+} from "./routes/google-login-routes.js";
 import { handleHealthRoute } from "./routes/health-route.js";
 import { handleInternalScheduledSyncRoute } from "./routes/internal-scheduled-sync-route.js";
 import { handleManualRefreshRoute } from "./routes/manual-refresh-route.js";
-import { handleUiAccountDetailRoute, handleUiAccountsRoute } from "./routes/ui-accounts-route.js";
+import {
+  handleUiAccountDetailRoute,
+  handleUiAccountsRoute,
+  handleUiContentOverviewRoute,
+} from "./routes/ui-accounts-route.js";
 import { seedDemoData } from "./cli/seed-demo.js";
 import { JobQueue } from "./services/job-queue.js";
+import { GoogleOauthService } from "./services/google-oauth-service.js";
 import { ManualRefreshService } from "./services/manual-refresh-service.js";
 import { createNormalizationService } from "./services/normalization-service.js";
 import { PasswordResetService } from "./services/password-reset-service.js";
 import { RefreshOrchestrator } from "./services/refresh-orchestrator.js";
 import { ScheduledSyncService } from "./services/scheduled-sync-service.js";
 import { SchedulerService } from "./services/scheduler-service.js";
+import { DataRetentionService } from "./services/data-retention-service.js";
 import { StatusService } from "./services/status-service.js";
 import { UiDashboardService } from "./services/ui-dashboard-service.js";
 import { UserApprovalService } from "./services/user-approval-service.js";
 import { UserAuthService } from "./services/user-auth-service.js";
+import { GoogleLoginSettingsRepository } from "./repositories/google-login-settings-repository.js";
+import { GoogleLoginSettingsService } from "./services/google-login-settings-service.js";
 
 async function recoverJobs({
   accountRepository,
@@ -100,10 +121,15 @@ function createCorsOriginResolver(config) {
 export async function createApp(overrides = {}) {
   const config = loadConfig(overrides);
   const store = new FileStore(config.dataDir);
+  const googleFetchImpl = overrides.googleFetchImpl ?? globalThis.fetch;
 
   await store.init([
     "account-configs",
+    "audit-logs",
+    "google-connections",
+    "google-login-settings",
     "jobs",
+    "oauth-states",
     "outbox-messages",
     "password-reset-tokens",
     "raw-platform-records",
@@ -116,13 +142,17 @@ export async function createApp(overrides = {}) {
 
   const repositories = {
     accountRepository: new AccountConfigRepository(store),
+    auditLogRepository: new AuditLogRepository(store),
+    googleConnectionRepository: new GoogleConnectionRepository(store),
     jobRepository: new JobRepository(store),
+    oauthStateRepository: new OauthStateRepository(store),
     outboxMessageRepository: new OutboxMessageRepository(store),
     rawRecordRepository: new RawRecordRepository(store),
     normalizedRecordRepository: new NormalizedRecordRepository(store),
     passwordResetTokenRepository: new PasswordResetTokenRepository(store),
     sheetSnapshotRepository: new SheetSnapshotRepository(store),
     sessionRepository: new SessionRepository(store),
+    googleLoginSettingsRepository: new GoogleLoginSettingsRepository(store),
     userRepository: new UserRepository(store),
   };
 
@@ -134,9 +164,24 @@ export async function createApp(overrides = {}) {
     });
   }
 
-  const sheetGateway = new FileSheetGateway({
-    sheetSnapshotRepository: repositories.sheetSnapshotRepository,
+  const googleOauthService = new GoogleOauthService({
+    accountRepository: repositories.accountRepository,
+    auditLogRepository: repositories.auditLogRepository,
+    config,
+    googleConnectionRepository: repositories.googleConnectionRepository,
+    logger: config.logger,
+    oauthStateRepository: repositories.oauthStateRepository,
     clock: config.clock,
+    fetchImpl: googleFetchImpl,
+  });
+  const sheetGateway = new GoogleSheetGateway({
+    auditLogRepository: repositories.auditLogRepository,
+    clock: config.clock,
+    config,
+    googleOauthService,
+    logger: config.logger,
+    sheetSnapshotRepository: repositories.sheetSnapshotRepository,
+    fetchImpl: googleFetchImpl,
   });
   const statusService = new StatusService({
     accountRepository: repositories.accountRepository,
@@ -176,8 +221,17 @@ export async function createApp(overrides = {}) {
     statusService,
     clock: config.clock,
   });
+  const dataRetentionService = new DataRetentionService({
+    jobRepository: repositories.jobRepository,
+    rawRecordRepository: repositories.rawRecordRepository,
+    logger: config.logger,
+    clock: config.clock,
+    jobRetentionMs: config.jobRetentionMs,
+    rawRecordRetentionMs: config.rawRecordRetentionMs,
+  });
   const schedulerService = new SchedulerService({
     scheduledSyncService,
+    dataRetentionService,
     intervalMs: config.scheduleIntervalMs,
     logger: config.logger,
   });
@@ -200,8 +254,15 @@ export async function createApp(overrides = {}) {
     clock: config.clock,
     config,
   });
+  const googleLoginSettingsService = new GoogleLoginSettingsService({
+    accountRepository: repositories.accountRepository,
+    clock: config.clock,
+    googleLoginSettingsRepository: repositories.googleLoginSettingsRepository,
+  });
   const uiDashboardService = new UiDashboardService({
     accountRepository: repositories.accountRepository,
+    config,
+    googleConnectionRepository: repositories.googleConnectionRepository,
     sheetSnapshotRepository: repositories.sheetSnapshotRepository,
     clock: config.clock,
   });
@@ -218,6 +279,9 @@ export async function createApp(overrides = {}) {
 
   const services = {
     ...repositories,
+    auditLogRepository: repositories.auditLogRepository,
+    googleLoginSettingsService,
+    googleOauthService,
     sheetGateway,
     statusService,
     normalizationService,
@@ -275,12 +339,70 @@ export async function createApp(overrides = {}) {
     await handleUiAccountsRoute({ req: request, res: reply, services });
   });
 
+  fastify.get("/api/v1/ui/content-overview", async (request, reply) => {
+    await handleUiContentOverviewRoute({ req: request, res: reply, services });
+  });
+
   fastify.get("/api/v1/ui/accounts/:platform/:accountId", async (request, reply) => {
     await handleUiAccountDetailRoute({
       req: request,
       res: reply,
       services,
       params: request.params,
+    });
+  });
+
+  fastify.post("/api/v1/integrations/google/start", async (request, reply) => {
+    await handleGoogleAuthorizationStartRoute({
+      req: request,
+      res: reply,
+      services,
+      config,
+    });
+  });
+
+  fastify.get("/api/v1/integrations/google/callback", async (request, reply) => {
+    await handleGoogleAuthorizationCallbackRoute({
+      req: request,
+      res: reply,
+      services,
+      config,
+    });
+  });
+
+  fastify.get("/api/v1/integrations/google/connections/:accountConfigId", async (request, reply) => {
+    await handleGoogleConnectionStatusRoute({
+      req: request,
+      res: reply,
+      services,
+      params: request.params,
+    });
+  });
+
+  fastify.post("/api/v1/integrations/google/connections/:accountConfigId/disconnect", async (request, reply) => {
+    await handleGoogleConnectionDisconnectRoute({
+      req: request,
+      res: reply,
+      services,
+      params: request.params,
+    });
+  });
+
+  fastify.post("/api/v1/auth/google/start", async (request, reply) => {
+    await handleGoogleLoginStartRoute({
+      req: request,
+      res: reply,
+      services,
+      config,
+    });
+  });
+
+  fastify.get("/api/v1/auth/google/callback", async (request, reply) => {
+    await handleGoogleLoginCallbackRoute({
+      req: request,
+      res: reply,
+      services,
+      config,
     });
   });
 

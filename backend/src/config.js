@@ -47,6 +47,18 @@ function readStringList(value, fallback = []) {
   return items.length > 0 ? items : fallback;
 }
 
+function readRequiredIfAny(values, fieldName) {
+  const definedValues = values.filter((value) => value !== undefined);
+
+  if (definedValues.length > 0 && definedValues.length !== values.length) {
+    throw new Error(`${fieldName} must be configured together.`);
+  }
+}
+
+function hasAnyDefined(values) {
+  return values.some((value) => value !== undefined);
+}
+
 function resolveSharedSecret(overrides) {
   const sharedSecret = overrides.sharedSecret ?? readTrimmedString(process.env.API_SHARED_SECRET);
 
@@ -94,8 +106,65 @@ function resolveAllowedClientIds(overrides) {
 export function loadConfig(overrides = {}) {
   const defaultRootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const rootDir = overrides.rootDir ?? defaultRootDir;
+  const nodeEnv = overrides.nodeEnv ?? process.env.NODE_ENV ?? "development";
+  const googleClientId =
+    overrides.googleClientId ?? readTrimmedString(process.env.GOOGLE_CLIENT_ID);
+  const googleClientSecret =
+    overrides.googleClientSecret ?? readTrimmedString(process.env.GOOGLE_CLIENT_SECRET);
+  const googleSheetsRedirectUri =
+    overrides.googleSheetsRedirectUri ??
+    overrides.googleRedirectUri ??
+    readTrimmedString(process.env.GOOGLE_SHEETS_REDIRECT_URI) ??
+    readTrimmedString(process.env.GOOGLE_REDIRECT_URI);
+  const googleLoginRedirectUri =
+    overrides.googleLoginRedirectUri ?? readTrimmedString(process.env.GOOGLE_LOGIN_REDIRECT_URI);
+  const googleTokenEncryptionKey =
+    overrides.googleTokenEncryptionKey ??
+    readTrimmedString(process.env.GOOGLE_TOKEN_ENCRYPTION_KEY);
+  const googleLoginScopes =
+    overrides.googleLoginScopes ??
+    readStringList(process.env.GOOGLE_LOGIN_SCOPES, [
+      "openid",
+      "email",
+      "profile",
+    ]);
+  const googleSheetsOauthScopes =
+    overrides.googleSheetsOauthScopes ??
+    overrides.googleOauthScopes ??
+    readStringList(
+      process.env.GOOGLE_SHEETS_OAUTH_SCOPES ?? process.env.GOOGLE_OAUTH_SCOPES,
+      [
+        "openid",
+        "email",
+        "profile",
+        "https://www.googleapis.com/auth/drive.file",
+      ],
+    );
 
-  return {
+  readRequiredIfAny([googleClientId, googleClientSecret], "GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET");
+
+  if (
+    hasAnyDefined([googleClientId, googleClientSecret, googleSheetsRedirectUri, googleLoginRedirectUri]) &&
+    (!googleClientId || !googleClientSecret)
+  ) {
+    throw new Error(
+      "GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET must be configured before enabling Google login or Google Sheets authorization.",
+    );
+  }
+
+  const googleLoginEnabled = Boolean(googleClientId && googleClientSecret && googleLoginRedirectUri);
+  const googleSheetsOauthEnabled = Boolean(
+    googleClientId && googleClientSecret && googleSheetsRedirectUri,
+  );
+  const googleOauthEnabled = googleSheetsOauthEnabled;
+
+  if (googleSheetsOauthEnabled && !googleTokenEncryptionKey) {
+    throw new Error(
+      "GOOGLE_TOKEN_ENCRYPTION_KEY must be configured before enabling Google Sheets OAuth integration.",
+    );
+  }
+
+  const config = {
     host: overrides.host ?? process.env.HOST ?? "127.0.0.1",
     port: overrides.port ?? readNumber(process.env.PORT, 3000),
     dataDir: overrides.dataDir ?? process.env.DATA_DIR ?? path.join(rootDir, "data"),
@@ -133,6 +202,7 @@ export function loadConfig(overrides = {}) {
       overrides.bootstrapAdminName ??
       readTrimmedString(process.env.BOOTSTRAP_ADMIN_NAME) ??
       "系統管理員",
+    nodeEnv,
     publicAppOrigin:
       overrides.publicAppOrigin ?? readTrimmedString(process.env.PUBLIC_APP_ORIGIN),
     frontendOrigins:
@@ -153,9 +223,41 @@ export function loadConfig(overrides = {}) {
       readNumber(process.env.ACCOUNT_COOLDOWN_MS, 30 * 1000),
     scheduleIntervalMs:
       overrides.scheduleIntervalMs ?? readNumber(process.env.SCHEDULE_INTERVAL_MS, 5 * 60 * 1000),
+    jobRetentionMs:
+      overrides.jobRetentionMs ??
+      readNumber(process.env.JOB_RETENTION_MS, 3 * 24 * 60 * 60 * 1000),
+    rawRecordRetentionMs:
+      overrides.rawRecordRetentionMs ??
+      readNumber(process.env.RAW_RECORD_RETENTION_MS, 3 * 24 * 60 * 60 * 1000),
     autoStartScheduler: overrides.autoStartScheduler ?? true,
     seedDemoData: overrides.seedDemoData ?? true,
+    googleLoginEnabled,
+    googleOauthEnabled,
+    googleSheetsOauthEnabled,
+    googleClientId,
+    googleClientSecret,
+    googleLoginRedirectUri,
+    googleSheetsRedirectUri,
+    googleTokenEncryptionKey,
+    googleLoginScopes,
+    googleOauthScopes: googleSheetsOauthScopes,
+    googleSheetsOauthScopes,
+    googleStateTtlMs:
+      overrides.googleStateTtlMs ??
+      readNumber(process.env.GOOGLE_STATE_TTL_MS, 10 * 60 * 1000),
+    googleOauthRateLimitWindowMs:
+      overrides.googleOauthRateLimitWindowMs ??
+      readNumber(process.env.GOOGLE_OAUTH_RATE_LIMIT_WINDOW_MS, 5 * 60 * 1000),
+    googleOauthRateLimitMax:
+      overrides.googleOauthRateLimitMax ??
+      readNumber(process.env.GOOGLE_OAUTH_RATE_LIMIT_MAX, 10),
     logger: overrides.logger ?? createLogger({ silent: overrides.silentLogs ?? false }),
     clock: overrides.clock ?? (() => new Date()),
   };
+
+  if (config.nodeEnv === "production" && !config.sessionCookieSecure) {
+    throw new Error("SESSION_COOKIE_SECURE must be enabled in production.");
+  }
+
+  return config;
 }

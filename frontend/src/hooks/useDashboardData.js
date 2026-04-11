@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getHealth, listAccounts } from "../api/dashboardApi.js";
+import { getContentOverview, getHealth } from "../api/dashboardApi.js";
 
-export function useDashboardData({ enabled } = {}) {
+export function useDashboardData({ enabled, userRole } = {}) {
   const abortControllerRef = useRef(null);
   const [health, setHealth] = useState(null);
   const [accounts, setAccounts] = useState([]);
+  const [platforms, setPlatforms] = useState([]);
   const [capabilities, setCapabilities] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -16,6 +17,7 @@ export function useDashboardData({ enabled } = {}) {
       abortControllerRef.current?.abort();
       setHealth(null);
       setAccounts([]);
+      setPlatforms([]);
       setCapabilities(null);
       setError("");
       setIsLoading(false);
@@ -31,9 +33,9 @@ export function useDashboardData({ enabled } = {}) {
     setError("");
 
     try {
-      const [nextHealth, nextSnapshot] = await Promise.all([
-        getHealth({ signal: controller.signal }),
-        listAccounts({ signal: controller.signal }),
+      const [nextHealth, nextOverview] = await Promise.all([
+        userRole === "admin" ? getHealth({ signal: controller.signal }) : Promise.resolve(null),
+        getContentOverview({ signal: controller.signal }),
       ]);
 
       if (controller.signal.aborted) {
@@ -41,9 +43,10 @@ export function useDashboardData({ enabled } = {}) {
       }
 
       setHealth(nextHealth);
-      setAccounts(Array.isArray(nextSnapshot.accounts) ? nextSnapshot.accounts : []);
-      setCapabilities(nextSnapshot.capabilities ?? null);
-      setLastUpdated(new Date().toISOString());
+      setAccounts(Array.isArray(nextOverview.accounts) ? nextOverview.accounts : []);
+      setPlatforms(Array.isArray(nextOverview.platforms) ? nextOverview.platforms : []);
+      setCapabilities(nextOverview.capabilities ?? null);
+      setLastUpdated(nextOverview.generatedAt ?? new Date().toISOString());
       setRefreshToken((value) => value + 1);
     } catch (requestError) {
       if (requestError.name === "AbortError") {
@@ -55,6 +58,7 @@ export function useDashboardData({ enabled } = {}) {
       if (!silent) {
         setHealth(null);
         setAccounts([]);
+        setPlatforms([]);
         setCapabilities(null);
       }
     } finally {
@@ -63,13 +67,14 @@ export function useDashboardData({ enabled } = {}) {
         setIsLoading(false);
       }
     }
-  }, [enabled]);
+  }, [enabled, userRole]);
 
   useEffect(() => {
     if (!enabled) {
       abortControllerRef.current?.abort();
       setHealth(null);
       setAccounts([]);
+      setPlatforms([]);
       setCapabilities(null);
       setError("");
       setIsLoading(false);
@@ -91,6 +96,7 @@ export function useDashboardData({ enabled } = {}) {
     health,
     isLoading,
     lastUpdated,
+    platforms,
     refreshDashboard,
     refreshToken,
   };

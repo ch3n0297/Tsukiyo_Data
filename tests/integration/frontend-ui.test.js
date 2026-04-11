@@ -28,7 +28,7 @@ test("backend no longer serves frontend assets after separation", async () => {
   }
 });
 
-test("ui read APIs expose aggregated account snapshots and latest output rows", async () => {
+test("ui read APIs expose aggregated account snapshots, platform overviews, and latest output rows", async () => {
   const accounts = [
     createAccount({ platform: "instagram", accountId: "ig-ui-1" }),
     createAccount({ platform: "facebook", accountId: "fb-ui-1" }),
@@ -90,6 +90,20 @@ test("ui read APIs expose aggregated account snapshots and latest output rows", 
     assert.equal(instagramAccount.latestOutput.rowCount, 1);
     assert.ok(instagramAccount.latestOutput.syncedAt);
 
+    const overviewResponse = await fetch(`${baseUrl}/api/v1/ui/content-overview`, {
+      headers: {
+        cookie: adminLogin.cookie,
+      },
+    });
+    const overviewJson = await overviewResponse.json();
+    assert.equal(overviewResponse.status, 200);
+    assert.equal(overviewJson.platforms.length, 2);
+    assert.equal(overviewJson.platforms[0].platform, "facebook");
+    assert.equal(overviewJson.platforms[1].platform, "instagram");
+    assert.equal(overviewJson.platforms[1].contentCount, 1);
+    assert.equal(overviewJson.platforms[1].previewItems[0].content_id, "ig-ui-post");
+    assert.equal(overviewJson.platforms[1].previewItems[0].clientName, "Test Client");
+
     const detailResponse = await fetch(`${baseUrl}/api/v1/ui/accounts/instagram/ig-ui-1`, {
       headers: {
         cookie: adminLogin.cookie,
@@ -142,6 +156,99 @@ test("frontend does not bypass existing manual refresh protection", async () => 
   }
 });
 
+test("content overview sorts items by views and limits previews to five rows per platform", async () => {
+  const { app, cleanup, baseUrl } = await setupTestApp({
+    accounts: [createAccount({ platform: "instagram", accountId: "ig-overview-1" })],
+    fixtures: {
+      "instagram--ig-overview-1.json": {
+        items: [
+          {
+            id: "ig-1",
+            media_type: "reel",
+            caption: "One",
+            permalink: "https://instagram.example.com/p/ig-1",
+            timestamp: "2026-03-10T10:00:00.000Z",
+            metrics: { plays: 50, likes: 5, comments: 1, shares: 0 },
+          },
+          {
+            id: "ig-2",
+            media_type: "reel",
+            caption: "Two",
+            permalink: "https://instagram.example.com/p/ig-2",
+            timestamp: "2026-03-11T10:00:00.000Z",
+            metrics: { plays: 350, likes: 25, comments: 4, shares: 2 },
+          },
+          {
+            id: "ig-3",
+            media_type: "reel",
+            caption: "Three",
+            permalink: "https://instagram.example.com/p/ig-3",
+            timestamp: "2026-03-12T10:00:00.000Z",
+            metrics: { plays: 150, likes: 14, comments: 3, shares: 1 },
+          },
+          {
+            id: "ig-4",
+            media_type: "reel",
+            caption: "Four",
+            permalink: "https://instagram.example.com/p/ig-4",
+            timestamp: "2026-03-13T10:00:00.000Z",
+            metrics: { plays: 450, likes: 32, comments: 6, shares: 2 },
+          },
+          {
+            id: "ig-5",
+            media_type: "reel",
+            caption: "Five",
+            permalink: "https://instagram.example.com/p/ig-5",
+            timestamp: "2026-03-14T10:00:00.000Z",
+            metrics: { plays: 250, likes: 18, comments: 2, shares: 1 },
+          },
+          {
+            id: "ig-6",
+            media_type: "reel",
+            caption: "Six",
+            permalink: "https://instagram.example.com/p/ig-6",
+            timestamp: "2026-03-15T10:00:00.000Z",
+            metrics: { plays: 550, likes: 40, comments: 7, shares: 3 },
+          },
+        ],
+      },
+    },
+  });
+
+  try {
+    const adminLogin = await loginAsAdmin(baseUrl);
+    const queued = await sendSignedJson({
+      baseUrl,
+      pathName: "/api/v1/refresh-jobs/manual",
+      body: {
+        platform: "instagram",
+        account_id: "ig-overview-1",
+        refresh_days: 7,
+        request_source: "apps-script",
+      },
+    });
+    assert.equal(queued.response.status, 202);
+    await app.services.jobQueue.waitForIdle();
+
+    const overviewResponse = await fetch(`${baseUrl}/api/v1/ui/content-overview`, {
+      headers: {
+        cookie: adminLogin.cookie,
+      },
+    });
+    const overviewJson = await overviewResponse.json();
+    assert.equal(overviewResponse.status, 200);
+    assert.equal(overviewJson.platforms.length, 1);
+    assert.equal(overviewJson.platforms[0].previewItems.length, 5);
+    assert.deepEqual(
+      overviewJson.platforms[0].previewItems.map((item) => item.content_id),
+      ["ig-6", "ig-4", "ig-2", "ig-5", "ig-3"],
+    );
+    assert.equal(overviewJson.platforms[0].items.length, 5);
+  } finally {
+    await cleanup();
+  }
+});
+
 test("admin can review pending users through protected browser APIs", async () => {
   const { cleanup, baseUrl } = await setupTestApp({
     accounts: [createAccount({ platform: "instagram", accountId: "ig-auth-1" })],
@@ -180,6 +287,7 @@ test("admin can review pending users through protected browser APIs", async () =
         method: "POST",
         headers: {
           cookie: adminLogin.cookie,
+          origin: "http://127.0.0.1:5173",
         },
       },
     );
@@ -187,6 +295,8 @@ test("admin can review pending users through protected browser APIs", async () =
     assert.equal(approve.status, 200);
     assert.equal(approveJson.user.status, "active");
 
+    // Member password login is blocked — members must use Google login.
+    // Verify the approval succeeded but member can't login with password.
     const memberLogin = await sendJsonRequest({
       baseUrl,
       pathName: "/api/v1/auth/login",
@@ -195,7 +305,8 @@ test("admin can review pending users through protected browser APIs", async () =
         password: "MemberPassword123!",
       },
     });
-    assert.equal(memberLogin.response.status, 200);
+    assert.equal(memberLogin.response.status, 403);
+    assert.equal(memberLogin.json.error, "GOOGLE_LOGIN_REQUIRED");
   } finally {
     await cleanup();
   }

@@ -6,6 +6,8 @@ import { createLogger } from "../src/lib/logger.js";
 import { createApp } from "../src/app.js";
 import { signPayload } from "../src/services/auth-service.js";
 
+const DEFAULT_BROWSER_ORIGIN = "http://127.0.0.1:5173";
+
 export function createAccount({
   clientName = "Test Client",
   platform,
@@ -14,15 +16,19 @@ export function createAccount({
   sheetId = "sheet-1",
   sheetRowKey,
   isActive = true,
+  tenantKey = "tenant-demo",
 }) {
   return {
     id: `${platform}-${accountId}`,
     clientName,
+    tenantKey,
     platform,
     accountId,
     refreshDays,
     sheetId,
+    allowedSpreadsheetId: sheetId,
     sheetRowKey: sheetRowKey ?? `${platform}-${accountId}`,
+    googleConnectionId: null,
     isActive,
     lastRequestTime: null,
     lastSuccessTime: null,
@@ -117,12 +123,22 @@ export async function sendJsonRequest({
   method = "POST",
   body,
   cookie,
+  headers = {},
+  origin,
 }) {
+  const shouldAttachOrigin = origin !== null && origin !== false && method.toUpperCase() !== "GET";
+  const resolvedOrigin =
+    shouldAttachOrigin
+      ? origin ?? DEFAULT_BROWSER_ORIGIN
+      : undefined;
+
   const response = await fetch(`${baseUrl}${pathName}`, {
     method,
     headers: {
       ...(body === undefined ? {} : { "content-type": "application/json" }),
       ...(cookie ? { cookie } : {}),
+      ...(resolvedOrigin ? { origin: resolvedOrigin } : {}),
+      ...headers,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });

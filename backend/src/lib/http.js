@@ -1,6 +1,7 @@
 import { HttpError } from "./errors.js";
 
 const INVALID_COOKIE_PATH_PATTERN = /[\u0000-\u001f\u007f;\r\n]/;
+const INVALID_REDIRECT_PATH_PATTERN = /[\u0000-\u001f\u007f]/;
 
 function decodeCookieValue(value) {
   try {
@@ -20,6 +21,57 @@ function normalizeCookiePath(pathValue) {
   }
 
   return pathValue;
+}
+
+function readHeaderValue(value) {
+  if (Array.isArray(value)) {
+    return typeof value[0] === "string" ? value[0] : undefined;
+  }
+
+  return typeof value === "string" ? value : undefined;
+}
+
+function toOrigin(value) {
+  if (typeof value !== "string" || value.trim() === "") {
+    return null;
+  }
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function resolveAllowedOrigins(config) {
+  const origins = new Set();
+  const candidates = [
+    config?.publicAppOrigin,
+    ...(Array.isArray(config?.frontendOrigins) ? config.frontendOrigins : []),
+  ];
+
+  for (const candidate of candidates) {
+    const origin = toOrigin(candidate);
+
+    if (origin) {
+      origins.add(origin);
+    }
+  }
+
+  return origins;
+}
+
+function resolveRequestOrigin(req) {
+  const originHeader = readHeaderValue(req.headers?.origin);
+  const resolvedOrigin = toOrigin(originHeader);
+
+  if (resolvedOrigin) {
+    return resolvedOrigin;
+  }
+
+  const refererHeader = readHeaderValue(req.headers?.referer);
+
+  return toOrigin(refererHeader);
 }
 
 export async function readJsonRequest(req, { maxBodyBytes = 1024 * 1024 } = {}) {
@@ -154,6 +206,44 @@ export function setResponseCookie(res, cookieValue) {
   res.setHeader("Set-Cookie", next);
 }
 
+export function normalizeAppRedirectPath(redirectTo) {
+  if (typeof redirectTo !== "string") {
+    return "/";
+  }
+
+  const trimmedValue = redirectTo.trim();
+
+  if (
+    trimmedValue === "" ||
+    !trimmedValue.startsWith("/") ||
+    trimmedValue.startsWith("//") ||
+    INVALID_REDIRECT_PATH_PATTERN.test(trimmedValue)
+  ) {
+    return "/";
+  }
+
+  try {
+    const url = new URL(trimmedValue, "http://dashboard.local");
+
+    if (url.origin !== "http://dashboard.local") {
+      return "/";
+    }
+
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return "/";
+  }
+}
+
+export function requireTrustedBrowserOrigin(req, config) {
+  const requestOrigin = resolveRequestOrigin(req);
+  const allowedOrigins = resolveAllowedOrigins(config);
+
+  if (!requestOrigin || !allowedOrigins.has(requestOrigin)) {
+    throw new HttpError(403, "UNTRUSTED_ORIGIN", "不允許來自未受信任來源的瀏覽器請求。");
+  }
+}
+
 export function getRequestOrigin(req, fallbackOrigin) {
   const forwardedProto = req.headers?.["x-forwarded-proto"];
   const forwardedHost = req.headers?.["x-forwarded-host"];
@@ -188,4 +278,21 @@ export function sendJson(res, statusCode, payload) {
     "x-content-type-options": "nosniff",
   });
   res.end(body);
+}
+
+export function redirectTo(res, statusCode, location) {
+  if (typeof location !== "string" || location === "") {
+    throw new TypeError("Redirect location must be a non-empty string.");
+  }
+
+  if (typeof res.redirect === "function") {
+    res.redirect(location, statusCode);
+    return;
+  }
+
+  res.writeHead(statusCode, {
+    location,
+    "x-content-type-options": "nosniff",
+  });
+  res.end();
 }

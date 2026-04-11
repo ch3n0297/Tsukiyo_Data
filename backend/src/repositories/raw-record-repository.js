@@ -14,4 +14,19 @@ export class RawRecordRepository {
       return records;
     });
   }
+
+  async deleteOlderThan(cutoffIso) {
+    const cutoffTime = Date.parse(cutoffIso);
+    let removedCount = 0;
+
+    await this.store.updateCollection(this.collection, async (records) => {
+      const kept = records.filter(
+        (record) => Date.parse(record.fetchedAt) >= cutoffTime,
+      );
+      removedCount = records.length - kept.length;
+      return kept;
+    });
+
+    return removedCount;
+  }
 }

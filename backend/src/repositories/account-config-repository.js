@@ -12,9 +12,19 @@ export class AccountConfigRepository {
     return this.store.readCollection(this.collection);
   }
 
+  async findById(accountConfigId) {
+    const records = await this.listAll();
+    return records.find((record) => record.id === accountConfigId) ?? null;
+  }
+
   async listActive() {
     const records = await this.listAll();
     return records.filter((record) => record.isActive);
+  }
+
+  async listByTenantKey(tenantKey) {
+    const records = await this.listAll();
+    return records.filter((record) => record.tenantKey === tenantKey);
   }
 
   async replaceAll(records) {

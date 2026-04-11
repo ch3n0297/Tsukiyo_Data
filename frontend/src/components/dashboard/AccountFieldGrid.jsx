@@ -3,6 +3,7 @@ import { formatRefreshStatus, formatTimestamp } from "../../utils/formatters.js"
 export function AccountFieldGrid({ account }) {
   const fields = [
     ["客戶", account.clientName],
+    ["租戶", account.tenantKey ?? "—"],
     ["平台", account.platform],
     ["帳號", account.accountId],
     ["預設更新天數", `${account.refreshDays} 天`],
@@ -13,6 +14,7 @@ export function AccountFieldGrid({ account }) {
     ["最近成功時間", formatTimestamp(account.lastSuccessTime)],
     ["目前工作 ID", account.currentJobId ?? "—"],
     ["工作表 ID", account.sheetId ?? "—"],
+    ["允許寫入 Spreadsheet", account.allowedSpreadsheetId ?? "—"],
     ["工作表列鍵值", account.sheetRowKey ?? "—"],
   ];
 

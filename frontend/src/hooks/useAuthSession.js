@@ -6,11 +6,29 @@ import {
   registerUser,
   requestPasswordReset,
   resetPassword,
+  startGoogleLogin,
 } from "../api/authApi.js";
 import { HttpRequestError } from "../api/httpClient.js";
 
 function detectInitialMode() {
-  return window.location.pathname === "/reset-password" ? "reset" : "login";
+  if (window.location.pathname === "/reset-password") {
+    return "reset";
+  }
+
+  return "login";
+}
+
+function detectGoogleAuthResult() {
+  const params = new URLSearchParams(window.location.search);
+
+  if (params.get("auth") !== "google") {
+    return null;
+  }
+
+  const status = params.get("auth_status");
+  const message = params.get("auth_message") ?? "";
+  window.history.replaceState({}, "", window.location.pathname);
+  return { status, message };
 }
 
 function readResetTokenFromLocation() {
@@ -62,6 +80,16 @@ export function useAuthSession() {
   }, []);
 
   useEffect(() => {
+    const googleResult = detectGoogleAuthResult();
+
+    if (googleResult) {
+      if (googleResult.status === "success") {
+        setMessage(googleResult.message);
+      } else {
+        setError(googleResult.message);
+      }
+    }
+
     void refreshSession();
 
     return () => {
@@ -168,6 +196,20 @@ export function useAuthSession() {
     [resetToken],
   );
 
+  const loginWithGoogle = useCallback(async () => {
+    setIsSubmitting(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await startGoogleLogin(window.location.pathname);
+      window.location.assign(response.authorization_url);
+    } catch (requestError) {
+      setError(requestError.message);
+      setIsSubmitting(false);
+    }
+  }, []);
+
   const authView = useMemo(
     () => ({
       mode,
@@ -183,6 +225,7 @@ export function useAuthSession() {
     isLoading,
     isSubmitting,
     login,
+    loginWithGoogle,
     logout,
     message,
     refreshSession,
