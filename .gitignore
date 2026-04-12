@@ -5,9 +5,18 @@ frontend/dist/
 *.log
 .env
 .env.*
-backend/data/sessions.json
-backend/data/users.json
-backend/data/password-reset-tokens.json
-backend/data/outbox-messages.json
+
+# 執行期資料（全部 json，不上雲）
+backend/data/*.json
+
+# IDE 個人設定
+.vscode/
+
+# AI 工具 session 狀態
+.remember/
+
+# 個人文件 / 二進位大型檔案
+docs/*.xlsx
+docs/**/*.pptx
+
 tiktok-verify-site/
-Homework_rule.md
