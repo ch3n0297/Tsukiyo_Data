@@ -23,6 +23,7 @@ import { SupabaseJobRepository } from "./repositories/supabase/job-repository.ts
 import { SupabaseRawRecordRepository } from "./repositories/supabase/raw-record-repository.ts";
 import { SupabaseNormalizedRecordRepository } from "./repositories/supabase/normalized-record-repository.ts";
 import { SupabaseSheetSnapshotRepository } from "./repositories/supabase/sheet-snapshot-repository.ts";
+import { createRequireAuth } from "./middleware/require-auth.ts";
 import {
   handleApproveUserRoute,
   handleCurrentUserRoute,
@@ -307,15 +308,23 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     });
   });
 
+  const requireAuth = config.useSupabaseStorage
+    ? createRequireAuth(createSupabaseClient(config.supabaseUrl, config.supabaseServiceRoleKey))
+    : null;
+
   fastify.get("/health", async (request, reply) => {
     handleHealthRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.get("/api/v1/ui/accounts", async (request, reply) => {
+  fastify.get("/api/v1/ui/accounts", {
+    preHandler: requireAuth ?? undefined,
+  }, async (request, reply) => {
     await handleUiAccountsRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.get("/api/v1/ui/accounts/:platform/:accountId", async (request, reply) => {
+  fastify.get("/api/v1/ui/accounts/:platform/:accountId", {
+    preHandler: requireAuth ?? undefined,
+  }, async (request, reply) => {
     await handleUiAccountDetailRoute({
       req: request,
       res: reply,
@@ -349,11 +358,15 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     await handleResetPasswordRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.get("/api/v1/admin/pending-users", async (request, reply) => {
+  fastify.get("/api/v1/admin/pending-users", {
+    preHandler: requireAuth ?? undefined,
+  }, async (request, reply) => {
     await handlePendingUsersRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.post("/api/v1/admin/pending-users/:userId/approve", async (request, reply) => {
+  fastify.post("/api/v1/admin/pending-users/:userId/approve", {
+    preHandler: requireAuth ?? undefined,
+  }, async (request, reply) => {
     await handleApproveUserRoute({
       req: request,
       res: reply,
@@ -363,7 +376,9 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     });
   });
 
-  fastify.post("/api/v1/admin/pending-users/:userId/reject", async (request, reply) => {
+  fastify.post("/api/v1/admin/pending-users/:userId/reject", {
+    preHandler: requireAuth ?? undefined,
+  }, async (request, reply) => {
     await handleRejectUserRoute({
       req: request,
       res: reply,
