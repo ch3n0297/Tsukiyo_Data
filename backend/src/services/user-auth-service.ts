@@ -5,7 +5,7 @@ import { readCookies, serializeCookie } from "../lib/http.ts";
 import { normalizeEmailAddress } from "./user-auth-validation-service.ts";
 import type { UserRepository } from "../repositories/user-repository.ts";
 import type { SessionRepository } from "../repositories/session-repository.ts";
-import type { AppConfig } from "../config.ts";
+import type { AppConfig } from "../types/app.ts";
 import type { User } from "../types/user.ts";
 import type { PublicUser } from "../types/user.ts";
 import type { Session } from "../types/session.ts";
@@ -82,11 +82,11 @@ export interface AuthContext {
 }
 
 export class UserAuthService {
-  private userRepository: UserRepository;
-  private sessionRepository: SessionRepository;
-  private clock: () => Date;
-  private config: AppConfig;
-  private sessionRefreshThresholdMs: number;
+  private readonly userRepository: UserRepository;
+  private readonly sessionRepository: SessionRepository;
+  private readonly clock: () => Date;
+  private readonly config: AppConfig;
+  private readonly sessionRefreshThresholdMs: number;
 
   constructor({ userRepository, sessionRepository, clock, config }: UserAuthServiceOptions) {
     this.userRepository = userRepository;

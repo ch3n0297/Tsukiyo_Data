@@ -2,8 +2,8 @@ import type { FileStore } from "../lib/fs-store.ts";
 import type { OutboxMessage } from "../types/outbox.ts";
 
 export class OutboxMessageRepository {
-  private store: FileStore;
-  private collection = "outbox-messages";
+  private readonly store: FileStore;
+  private readonly collection = "outbox-messages";
 
   constructor(store: FileStore) {
     this.store = store;

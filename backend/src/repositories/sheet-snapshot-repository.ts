@@ -2,9 +2,9 @@ import type { FileStore } from "../lib/fs-store.ts";
 import type { SheetStatusSnapshot, SheetOutputSnapshot } from "../types/sheet.ts";
 
 export class SheetSnapshotRepository {
-  private store: FileStore;
-  private statusCollection = "sheet-status";
-  private outputCollection = "sheet-output";
+  private readonly store: FileStore;
+  private readonly statusCollection = "sheet-status";
+  private readonly outputCollection = "sheet-output";
 
   constructor(store: FileStore) {
     this.store = store;

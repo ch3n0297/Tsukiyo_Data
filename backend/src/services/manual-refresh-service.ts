@@ -6,7 +6,7 @@ import type { AccountConfigRepository } from "../repositories/account-config-rep
 import type { JobRepository } from "../repositories/job-repository.ts";
 import type { JobQueue } from "./job-queue.ts";
 import type { StatusService } from "./status-service.ts";
-import type { AppConfig } from "../config.ts";
+import type { AppConfig } from "../types/app.ts";
 import type { Job } from "../types/job.ts";
 import type { AccountConfig } from "../types/account-config.ts";
 

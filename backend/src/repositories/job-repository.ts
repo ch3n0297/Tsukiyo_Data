@@ -2,8 +2,8 @@ import type { FileStore } from "../lib/fs-store.ts";
 import type { Job, JobStatus, TriggerType } from "../types/job.ts";
 
 export class JobRepository {
-  private store: FileStore;
-  private collection = "jobs";
+  private readonly store: FileStore;
+  private readonly collection = "jobs";
 
   constructor(store: FileStore) {
     this.store = store;

@@ -6,8 +6,8 @@ export function makeAccountKey(platform: string, accountId: string): string {
 }
 
 export class AccountConfigRepository {
-  private store: FileStore;
-  private collection = "account-configs";
+  private readonly store: FileStore;
+  private readonly collection = "account-configs";
 
   constructor(store: FileStore) {
     this.store = store;

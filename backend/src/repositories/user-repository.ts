@@ -7,8 +7,8 @@ function normalizeEmail(email: string): string {
 }
 
 export class UserRepository {
-  private store: FileStore;
-  private collection = "users";
+  private readonly store: FileStore;
+  private readonly collection = "users";
 
   constructor(store: FileStore) {
     this.store = store;

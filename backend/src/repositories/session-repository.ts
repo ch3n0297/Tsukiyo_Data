@@ -2,8 +2,8 @@ import type { FileStore } from "../lib/fs-store.ts";
 import type { Session } from "../types/session.ts";
 
 export class SessionRepository {
-  private store: FileStore;
-  private collection = "sessions";
+  private readonly store: FileStore;
+  private readonly collection = "sessions";
 
   constructor(store: FileStore) {
     this.store = store;

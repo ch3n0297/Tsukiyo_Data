@@ -6,7 +6,7 @@ import type { UserRepository } from "../repositories/user-repository.ts";
 import type { SessionRepository } from "../repositories/session-repository.ts";
 import type { PasswordResetTokenRepository } from "../repositories/password-reset-token-repository.ts";
 import type { OutboxMessageRepository } from "../repositories/outbox-message-repository.ts";
-import type { AppConfig } from "../config.ts";
+import type { AppConfig } from "../types/app.ts";
 import type { OutboxMessage } from "../types/outbox.ts";
 
 function createRawToken(): string {

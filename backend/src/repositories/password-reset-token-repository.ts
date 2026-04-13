@@ -2,8 +2,8 @@ import type { FileStore } from "../lib/fs-store.ts";
 import type { PasswordResetToken } from "../types/password-reset.ts";
 
 export class PasswordResetTokenRepository {
-  private store: FileStore;
-  private collection = "password-reset-tokens";
+  private readonly store: FileStore;
+  private readonly collection = "password-reset-tokens";
 
   constructor(store: FileStore) {
     this.store = store;
