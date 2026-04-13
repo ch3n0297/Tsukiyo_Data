@@ -4,16 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node backend/src/server.js",
-    "dev:backend": "node backend/src/server.js",
+    "start": "node --experimental-strip-types backend/src/server.ts",
+    "dev:backend": "node --experimental-strip-types backend/src/server.ts",
     "dev:frontend": "vite --config frontend/vite.config.js",
     "build:frontend": "vite build --config frontend/vite.config.js",
     "preview:frontend": "vite preview --config frontend/vite.config.js",
-    "seed": "node backend/src/cli/seed-demo.js",
-    "sign": "node backend/src/cli/sign-request.js",
-    "test:backend": "node --test tests/integration/*.test.js tests/unit/*.test.js",
+    "seed": "node --experimental-strip-types backend/src/cli/seed-demo.ts",
+    "sign": "node --experimental-strip-types backend/src/cli/sign-request.ts",
+    "test:backend": "node --experimental-strip-types --test tests/integration/*.test.ts tests/unit/*.test.ts",
     "test:frontend": "vitest run --config frontend/vite.config.js",
-    "test": "npm run test:backend && npm run test:frontend"
+    "test": "npm run test:backend && npm run test:frontend",
+    "typecheck:backend": "tsc --noEmit -p backend/tsconfig.json",
+    "typecheck:frontend": "tsc --noEmit -p frontend/tsconfig.json",
+    "typecheck": "npm run typecheck:backend && npm run typecheck:frontend"
   },
   "engines": {
     "node": ">=24.0.0"
@@ -27,8 +30,12 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.3.4",
     "jsdom": "^25.0.1",
+    "typescript": "^6.0.2",
     "vite": "^5.4.14",
     "vitest": "^2.1.8"
   }
