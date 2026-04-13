@@ -233,8 +233,8 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     config,
   });
   const userApprovalService = new UserApprovalService({
-    store,
     userRepository: repositories.userRepository,
+    outboxMessageRepository: repositories.outboxMessageRepository,
     clock: config.clock,
   });
   const passwordResetService = new PasswordResetService({
