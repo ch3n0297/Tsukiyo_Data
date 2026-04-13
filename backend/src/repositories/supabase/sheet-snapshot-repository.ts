@@ -2,10 +2,13 @@ import type { SupabaseClient } from '../../lib/supabase-client.ts';
 import type { SheetStatusSnapshot, SheetOutputSnapshot } from '../../types/sheet.ts';
 
 export class SupabaseSheetSnapshotRepository {
-  constructor(
-    private readonly client: SupabaseClient,
-    private readonly userId: string,
-  ) {}
+  private readonly client: SupabaseClient;
+  private readonly userId: string;
+
+  constructor(client: SupabaseClient, userId: string) {
+    this.client = client;
+    this.userId = userId;
+  }
 
   async listStatuses(): Promise<SheetStatusSnapshot[]> {
     const { data, error } = await this.client

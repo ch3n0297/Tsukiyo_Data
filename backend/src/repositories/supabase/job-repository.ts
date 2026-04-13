@@ -21,11 +21,15 @@ function mapRow(row: Record<string, unknown>): Job {
 }
 
 export class SupabaseJobRepository {
-  constructor(
-    private readonly client: SupabaseClient,
-    private readonly userId: string,
-    private readonly defaultAccountConfigId?: string,
-  ) {}
+  private readonly client: SupabaseClient;
+  private readonly userId: string;
+  private readonly defaultAccountConfigId: string | undefined;
+
+  constructor(client: SupabaseClient, userId: string, defaultAccountConfigId?: string) {
+    this.client = client;
+    this.userId = userId;
+    this.defaultAccountConfigId = defaultAccountConfigId;
+  }
 
   async listAll(): Promise<Job[]> {
     const { data, error } = await this.client

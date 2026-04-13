@@ -23,10 +23,13 @@ function mapRow(row: Record<string, unknown>): NormalizedRecord {
 }
 
 export class SupabaseNormalizedRecordRepository {
-  constructor(
-    private readonly client: SupabaseClient,
-    private readonly userId: string,
-  ) {}
+  private readonly client: SupabaseClient;
+  private readonly userId: string;
+
+  constructor(client: SupabaseClient, userId: string) {
+    this.client = client;
+    this.userId = userId;
+  }
 
   async listAll(): Promise<NormalizedRecord[]> {
     const { data, error } = await this.client
