@@ -18,7 +18,7 @@ function mapRow(row: Record<string, unknown>): AccountConfig {
     currentJobId: null,
     refreshStatus: 'idle',
     systemMessage: '',
-    updatedAt: (row.created_at as string) ?? new Date().toISOString(),
+    updatedAt: (row.updated_at as string) ?? (row.created_at as string) ?? '',
   };
 }
 
@@ -45,13 +45,11 @@ export class SupabaseAccountConfigRepository {
   }
 
   async replaceAll(records: AccountConfig[]): Promise<AccountConfig[]> {
-    const { error: delErr } = await this.client
-      .from('account_configs')
-      .delete()
-      .eq('user_id', this.userId);
-    if (delErr) throw delErr;
-
-    if (records.length === 0) return [];
+    if (records.length === 0) {
+      const { error } = await this.client.from('account_configs').delete().eq('user_id', this.userId);
+      if (error) throw error;
+      return [];
+    }
 
     const rows = records.map((r) => ({
       id: r.id,
@@ -64,8 +62,19 @@ export class SupabaseAccountConfigRepository {
       sheet_tab: r.sheetRowKey || null,
     }));
 
-    const { error } = await this.client.from('account_configs').insert(rows);
-    if (error) throw error;
+    // upsert-first：先寫入新資料，確保成功後再刪除孤立記錄（避免刪後寫入失敗導致資料遺失）
+    const { error: upsertErr } = await this.client
+      .from('account_configs')
+      .upsert(rows, { onConflict: 'id' });
+    if (upsertErr) throw upsertErr;
+
+    const keptIds = records.map((r) => r.id).filter(Boolean).join(',');
+    const { error: delErr } = await this.client
+      .from('account_configs')
+      .delete()
+      .eq('user_id', this.userId)
+      .not('id', 'in', `(${keptIds})`);
+    if (delErr) throw delErr;
 
     return this.listAll();
   }

@@ -31,7 +31,7 @@ export class SupabaseSheetSnapshotRepository {
       return {
         sheetId: (cfg.sheet_id as string) ?? '',
         sheetRowKey: (cfg.sheet_tab as string) ?? '',
-        platform: (cfg.platform as SheetStatusSnapshot['platform']),
+        platform: (cfg.platform as SheetStatusSnapshot['platform']) ?? 'instagram',
         accountId: (cfg.account_id as string) ?? '',
         refreshStatus: (r.refresh_status as SheetStatusSnapshot['refreshStatus']) ?? 'idle',
         systemMessage: (r.system_message as string) ?? '',
@@ -58,7 +58,10 @@ export class SupabaseSheetSnapshotRepository {
       .eq('account_id', snapshot.accountId)
       .maybeSingle();
     if (cfgErr) throw cfgErr;
-    if (!cfg) return this.listStatuses(); // 找不到對應 config，跳過
+    if (!cfg) {
+      console.warn(`[SheetSnapshotRepository] upsertStatus: 找不到 account_config for ${snapshot.platform}:${snapshot.accountId}，跳過`);
+      return this.listStatuses();
+    }
 
     const { error } = await this.client.from('sheet_snapshots').upsert(
       {

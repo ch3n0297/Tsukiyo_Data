@@ -159,15 +159,19 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
 
   let repositories = fileStoreRepos;
 
-  if (config.useSupabaseStorage) {
-    const supabase = createSupabaseClient(config.supabaseUrl, config.supabaseServiceRoleKey);
+  // supabaseClient 提升到外層作用域，供 repositories 和 requireAuth 共用（避免重複建立）
+  const supabaseClient = config.useSupabaseStorage
+    ? createSupabaseClient(config.supabaseUrl, config.supabaseServiceRoleKey)
+    : null;
+
+  if (supabaseClient) {
     const userId = MIGRATION_SYSTEM_USER_ID;
     Object.assign(repositories, {
-      accountRepository: new SupabaseAccountConfigRepository(supabase, userId),
-      jobRepository: new SupabaseJobRepository(supabase, userId),
-      rawRecordRepository: new SupabaseRawRecordRepository(supabase, userId),
-      normalizedRecordRepository: new SupabaseNormalizedRecordRepository(supabase, userId),
-      sheetSnapshotRepository: new SupabaseSheetSnapshotRepository(supabase, userId),
+      accountRepository: new SupabaseAccountConfigRepository(supabaseClient, userId),
+      jobRepository: new SupabaseJobRepository(supabaseClient, userId),
+      rawRecordRepository: new SupabaseRawRecordRepository(supabaseClient, userId),
+      normalizedRecordRepository: new SupabaseNormalizedRecordRepository(supabaseClient, userId),
+      sheetSnapshotRepository: new SupabaseSheetSnapshotRepository(supabaseClient, userId),
     });
   }
 
@@ -308,9 +312,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     });
   });
 
-  const requireAuth = config.useSupabaseStorage
-    ? createRequireAuth(createSupabaseClient(config.supabaseUrl, config.supabaseServiceRoleKey))
-    : null;
+  const requireAuth = supabaseClient ? createRequireAuth(supabaseClient) : null;
 
   fastify.get("/health", async (request, reply) => {
     handleHealthRoute({ req: request, res: reply, services, config });

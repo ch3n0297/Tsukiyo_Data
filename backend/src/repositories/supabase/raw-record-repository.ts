@@ -31,7 +31,7 @@ export class SupabaseRawRecordRepository {
   }
 
   async appendMany(recordsToAdd: RawRecord[]): Promise<RawRecord[]> {
-    if (recordsToAdd.length === 0) return this.listAll();
+    if (recordsToAdd.length === 0) return [];
 
     const rows = recordsToAdd.map((record) => {
       const r = record as RawRecordRow;
@@ -40,7 +40,7 @@ export class SupabaseRawRecordRepository {
       const postId = (payload?.id as string) ?? (r.id as string) ?? crypto.randomUUID();
 
       return {
-        id: r.id as string ?? crypto.randomUUID(),
+        id: (r.id as string) ?? crypto.randomUUID(),
         user_id: this.userId,
         job_id: (r.jobId as string | null) ?? null,
         platform: r.platform as string,
@@ -51,11 +51,12 @@ export class SupabaseRawRecordRepository {
       };
     });
 
-    const { error } = await this.client
+    const { data, error } = await this.client
       .from('raw_records')
-      .upsert(rows, { onConflict: 'user_id,platform,account_id,post_id' });
+      .upsert(rows, { onConflict: 'user_id,platform,account_id,post_id' })
+      .select('raw_data');
     if (error) throw error;
 
-    return this.listAll();
+    return (data ?? []).map((row) => row.raw_data as RawRecord);
   }
 }

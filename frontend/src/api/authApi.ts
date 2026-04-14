@@ -5,14 +5,21 @@ import type { PublicUser } from "../types/api";
 
 // === Supabase Auth 函數 ===
 
-function mapSupabaseUser(user: { id: string; email?: string; user_metadata?: Record<string, unknown> }): PublicUser {
+function mapSupabaseUser(user: {
+  id: string;
+  email?: string;
+  user_metadata?: Record<string, unknown>;
+  app_metadata?: Record<string, unknown>;
+}): PublicUser {
   const meta = user.user_metadata ?? {};
+  // app_metadata 由 server/service-role 管理，優先於 user_metadata（使用者不可篡改）
+  const appMeta = user.app_metadata ?? {};
   return {
     id: user.id,
     email: user.email ?? '',
     displayName: (meta.name as string) ?? (user.email ?? ''),
-    role: (meta.role as PublicUser['role']) ?? 'member',
-    status: (meta.status as PublicUser['status']) ?? 'active',
+    role: (appMeta.role as PublicUser['role']) ?? (meta.role as PublicUser['role']) ?? 'member',
+    status: (appMeta.status as PublicUser['status']) ?? (meta.status as PublicUser['status']) ?? 'active',
     approvedAt: null,
     approvedBy: null,
     lastLoginAt: null,
@@ -45,7 +52,8 @@ export async function signUpWithSupabase(
   const { error } = await requireSupabase().auth.signUp({
     email,
     password,
-    options: { data: { name: displayName, status: 'pending', role: 'member' } },
+    // role/status 不放 user_metadata（用戶可自行更新），由後端/service-role 設定 app_metadata
+    options: { data: { name: displayName, status: 'pending' } },
   });
   if (error) throw new Error(error.message);
   return { status: 'pending' };
@@ -62,7 +70,8 @@ export async function requestPasswordResetWithSupabase(email: string): Promise<v
 }
 
 export async function getSupabaseCurrentUser(): Promise<PublicUser | null> {
-  const { data: { user } } = await requireSupabase().auth.getUser();
+  const { data: { user }, error } = await requireSupabase().auth.getUser();
+  if (error) throw new Error(error.message);
   return user ? mapSupabaseUser(user) : null;
 }
 

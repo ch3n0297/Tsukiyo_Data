@@ -12,11 +12,11 @@ function mapRow(row: Record<string, unknown>): Job {
     refreshDays: (row.refresh_days as number) ?? 30,
     status: row.status as JobStatus,
     systemMessage: (row.system_message as string) ?? '',
-    queuedAt: (row.queued_at as string) ?? new Date().toISOString(),
+    queuedAt: (row.queued_at as string) ?? '',
     startedAt: (row.started_at as string | null) ?? null,
     finishedAt: (row.completed_at as string | null) ?? null,
-    errorCode: null,
-    resultSummary: null,
+    errorCode: (row.error_code as string | null) ?? null,
+    resultSummary: (row.result_summary as unknown | null) ?? null,
   };
 }
 
@@ -75,7 +75,7 @@ export class SupabaseJobRepository {
       accountConfigId = (newCfg as { id: string }).id;
     }
 
-    const { error } = await this.client.from('jobs').insert({
+    const { data, error } = await this.client.from('jobs').insert({
       id: job.id,
       user_id: this.userId,
       account_config_id: accountConfigId,
@@ -90,10 +90,10 @@ export class SupabaseJobRepository {
       queued_at: job.queuedAt,
       started_at: job.startedAt,
       completed_at: job.finishedAt,
-    });
+    }).select('*').single();
     if (error) throw error;
 
-    return this.listAll();
+    return [mapRow(data as Record<string, unknown>)];
   }
 
   async findById(jobId: string): Promise<Job | undefined> {
@@ -101,6 +101,7 @@ export class SupabaseJobRepository {
       .from('jobs')
       .select('*')
       .eq('id', jobId)
+      .eq('user_id', this.userId)
       .maybeSingle();
     if (error) throw error;
     return data ? mapRow(data as Record<string, unknown>) : undefined;
@@ -114,7 +115,11 @@ export class SupabaseJobRepository {
     if (patch.finishedAt !== undefined) dbPatch.completed_at = patch.finishedAt;
 
     if (Object.keys(dbPatch).length > 0) {
-      const { error } = await this.client.from('jobs').update(dbPatch).eq('id', jobId);
+      const { error } = await this.client
+        .from('jobs')
+        .update(dbPatch)
+        .eq('id', jobId)
+        .eq('user_id', this.userId);
       if (error) throw error;
     }
 

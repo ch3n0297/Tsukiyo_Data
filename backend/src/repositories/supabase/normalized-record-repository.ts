@@ -43,16 +43,16 @@ export class SupabaseNormalizedRecordRepository {
   async replaceForAccount(accountKey: string, nextRecords: NormalizedRecord[]): Promise<NormalizedRecord[]> {
     const [platform, accountId] = accountKey.split(':');
 
-    // 刪除該帳號舊資料
-    const { error: delErr } = await this.client
-      .from('normalized_records')
-      .delete()
-      .eq('user_id', this.userId)
-      .eq('platform', platform)
-      .eq('account_id', accountId);
-    if (delErr) throw delErr;
-
-    if (nextRecords.length === 0) return this.listAll();
+    if (nextRecords.length === 0) {
+      const { error } = await this.client
+        .from('normalized_records')
+        .delete()
+        .eq('user_id', this.userId)
+        .eq('platform', platform)
+        .eq('account_id', accountId);
+      if (error) throw error;
+      return [];
+    }
 
     const rows = nextRecords.map((r) => ({
       id: r.id,
@@ -70,8 +70,21 @@ export class SupabaseNormalizedRecordRepository {
       share_count: r.shares,
     }));
 
-    const { error } = await this.client.from('normalized_records').insert(rows);
-    if (error) throw error;
+    // upsert-first：先寫入確保成功，再刪孤立舊資料
+    const { error: upsertErr } = await this.client
+      .from('normalized_records')
+      .upsert(rows, { onConflict: 'user_id,platform,account_id,post_id' });
+    if (upsertErr) throw upsertErr;
+
+    const keptContentIds = nextRecords.map((r) => r.contentId).join(',');
+    const { error: delErr } = await this.client
+      .from('normalized_records')
+      .delete()
+      .eq('user_id', this.userId)
+      .eq('platform', platform)
+      .eq('account_id', accountId)
+      .not('post_id', 'in', `(${keptContentIds})`);
+    if (delErr) throw delErr;
 
     return this.listAll();
   }

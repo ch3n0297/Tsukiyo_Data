@@ -44,8 +44,9 @@ async function getSupabaseAuthHeader(): Promise<Record<string, string>> {
     if (session?.access_token) {
       return { Authorization: `Bearer ${session.access_token}` };
     }
-  } catch {
-    // Supabase 未初始化或網路錯誤時忽略
+  } catch (err) {
+    // Supabase 未初始化或網路錯誤時降級為無 auth header（不中斷請求）
+    console.warn('[httpClient] getSupabaseAuthHeader failed:', err);
   }
   return {};
 }

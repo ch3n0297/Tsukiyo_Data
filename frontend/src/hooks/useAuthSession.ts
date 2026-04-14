@@ -96,7 +96,7 @@ export function useAuthSession() {
 
     try {
       if (USE_SUPABASE_AUTH) {
-        const p = payload as { email?: string; password?: string; display_name?: string };
+        const p = (payload ?? {}) as { email?: string; password?: string; display_name?: string };
         await signUpWithSupabase(p.email ?? '', p.password ?? '', p.display_name ?? '');
         setMessage("註冊成功，請等待管理員審核。");
         setMode("login");
@@ -119,7 +119,7 @@ export function useAuthSession() {
 
     try {
       if (USE_SUPABASE_AUTH) {
-        const p = payload as { email?: string; password?: string };
+        const p = (payload ?? {}) as { email?: string; password?: string };
         const user = await signInWithSupabase(p.email ?? '', p.password ?? '');
         setUser(user);
       } else {
