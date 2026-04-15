@@ -25,8 +25,10 @@
     "@fastify/cors": "^11.2.0",
     "@supabase/supabase-js": "^2.103.0",
     "fastify": "^5.8.2",
+    "lucide-react": "^1.8.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.14.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
