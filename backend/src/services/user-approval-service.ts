@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import { HttpError } from "../lib/errors.ts";
 import { sanitizeUser } from "./user-auth-service.ts";
-import type { FileStore } from "../lib/fs-store.ts";
 import type { UserRepository } from "../repositories/user-repository.ts";
+import type { OutboxMessageRepository } from "../repositories/outbox-message-repository.ts";
 import type { PublicUser, User, UserStatus } from "../types/user.ts";
 import type { OutboxMessage } from "../types/outbox.ts";
 
@@ -35,19 +35,19 @@ interface DecideUserParams {
 }
 
 interface UserApprovalServiceOptions {
-  store: FileStore;
   userRepository: UserRepository;
+  outboxMessageRepository: OutboxMessageRepository;
   clock: () => Date;
 }
 
 export class UserApprovalService {
-  readonly store: FileStore;
   readonly userRepository: UserRepository;
+  readonly outboxMessageRepository: OutboxMessageRepository;
   readonly clock: () => Date;
 
-  constructor({ store, userRepository, clock }: UserApprovalServiceOptions) {
-    this.store = store;
+  constructor({ userRepository, outboxMessageRepository, clock }: UserApprovalServiceOptions) {
     this.userRepository = userRepository;
+    this.outboxMessageRepository = outboxMessageRepository;
     this.clock = clock;
   }
 
@@ -104,49 +104,27 @@ export class UserApprovalService {
     invalidStatusMessage,
     outboxMessage,
   }: DecideUserParams): Promise<User | null> {
-    let updatedUser: User | null = null;
+    const user = await this.userRepository.findById(targetUserId);
+    if (!user) {
+      throw new HttpError(404, "USER_NOT_FOUND", "找不到指定的使用者。");
+    }
+    if (user.status !== "pending") {
+      throw new HttpError(409, "USER_STATUS_INVALID", invalidStatusMessage);
+    }
 
-    type Collections = { users: User[]; "outbox-messages": OutboxMessage[] };
-    await this.store.updateCollections<Collections>(
-      ["users", "outbox-messages"],
-      (collections) => {
-        const users = Array.isArray(collections.users) ? collections.users : [];
-        const outboxMessages = Array.isArray(collections["outbox-messages"])
-          ? collections["outbox-messages"]
-          : [];
-        const index = users.findIndex((user) => user.id === targetUserId);
+    const now = this.clock().toISOString();
+    const updatedUser = await this.userRepository.updateById(targetUserId, {
+      status: nextStatus,
+      ...buildNextFields(now),
+      updatedAt: now,
+    });
 
-        if (index === -1) {
-          throw new HttpError(404, "USER_NOT_FOUND", "找不到指定的使用者。");
-        }
-
-        const user = users[index];
-
-        if (user.status !== "pending") {
-          throw new HttpError(409, "USER_STATUS_INVALID", invalidStatusMessage);
-        }
-
-        const now = this.clock().toISOString();
-        updatedUser = {
-          ...user,
-          status: nextStatus,
-          ...buildNextFields(now),
-          updatedAt: now,
-        };
-        users[index] = updatedUser;
-        outboxMessages.push(
-          buildOutboxMessage({
-            clock: this.clock,
-            to: user.email,
-            ...outboxMessage,
-          }),
-        );
-
-        return {
-          users,
-          "outbox-messages": outboxMessages,
-        };
-      },
+    await this.outboxMessageRepository.create(
+      buildOutboxMessage({
+        clock: this.clock,
+        to: user.email,
+        ...outboxMessage,
+      }),
     );
 
     return updatedUser;

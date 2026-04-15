@@ -32,6 +32,10 @@ export interface AppConfig {
   seedDemoData: boolean;
   logger: Logger;
   clock: () => Date;
+  supabaseUrl: string;
+  supabaseServiceRoleKey: string;
+  supabaseAnonKey: string;
+  useSupabaseStorage: boolean;
 }
 
 export type ConfigOverrides = Partial<AppConfig> & {
@@ -192,5 +196,13 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     seedDemoData: overrides.seedDemoData ?? true,
     logger: overrides.logger ?? createLogger({ silent: overrides.silentLogs ?? false }),
     clock: overrides.clock ?? (() => new Date()),
+    supabaseUrl: overrides.supabaseUrl ?? readTrimmedString(process.env.SUPABASE_URL) ?? '',
+    supabaseServiceRoleKey:
+      overrides.supabaseServiceRoleKey ??
+      readTrimmedString(process.env.SUPABASE_SERVICE_ROLE_KEY) ??
+      '',
+    supabaseAnonKey: overrides.supabaseAnonKey ?? readTrimmedString(process.env.SUPABASE_ANON_KEY) ?? '',
+    useSupabaseStorage:
+      overrides.useSupabaseStorage ?? readBoolean(process.env.USE_SUPABASE_STORAGE, false),
   };
 }

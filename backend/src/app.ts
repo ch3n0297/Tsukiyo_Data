@@ -7,6 +7,7 @@ import { FileSheetGateway } from "./adapters/sheets/file-sheet-gateway.ts";
 import { createPlatformRegistry } from "./adapters/platforms/platform-registry.ts";
 import { toErrorResponse } from "./lib/errors.ts";
 import { FileStore } from "./lib/fs-store.ts";
+import { createSupabaseClient } from "./lib/supabase-client.ts";
 import { sendJson } from "./lib/http.ts";
 import { AccountConfigRepository } from "./repositories/account-config-repository.ts";
 import { JobRepository } from "./repositories/job-repository.ts";
@@ -17,6 +18,12 @@ import { RawRecordRepository } from "./repositories/raw-record-repository.ts";
 import { SessionRepository } from "./repositories/session-repository.ts";
 import { SheetSnapshotRepository } from "./repositories/sheet-snapshot-repository.ts";
 import { UserRepository } from "./repositories/user-repository.ts";
+import { SupabaseAccountConfigRepository } from "./repositories/supabase/account-config-repository.ts";
+import { SupabaseJobRepository } from "./repositories/supabase/job-repository.ts";
+import { SupabaseRawRecordRepository } from "./repositories/supabase/raw-record-repository.ts";
+import { SupabaseNormalizedRecordRepository } from "./repositories/supabase/normalized-record-repository.ts";
+import { SupabaseSheetSnapshotRepository } from "./repositories/supabase/sheet-snapshot-repository.ts";
+import { createRequireAuth } from "./middleware/require-auth.ts";
 import {
   handleApproveUserRoute,
   handleCurrentUserRoute,
@@ -119,6 +126,8 @@ function createCorsOriginResolver(config: AppConfig) {
   };
 }
 
+const MIGRATION_SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000001';
+
 export async function createApp(overrides: ConfigOverrides = {}): Promise<AppInstance> {
   const config = loadConfig(overrides);
   const store = new FileStore(config.dataDir);
@@ -136,7 +145,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     "users",
   ]);
 
-  const repositories = {
+  const fileStoreRepos = {
     accountRepository: new AccountConfigRepository(store),
     jobRepository: new JobRepository(store),
     outboxMessageRepository: new OutboxMessageRepository(store),
@@ -147,6 +156,24 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     sessionRepository: new SessionRepository(store),
     userRepository: new UserRepository(store),
   };
+
+  let repositories = fileStoreRepos;
+
+  // supabaseClient 提升到外層作用域，供 repositories 和 requireAuth 共用（避免重複建立）
+  const supabaseClient = config.useSupabaseStorage
+    ? createSupabaseClient(config.supabaseUrl, config.supabaseServiceRoleKey)
+    : null;
+
+  if (supabaseClient) {
+    const userId = MIGRATION_SYSTEM_USER_ID;
+    Object.assign(repositories, {
+      accountRepository: new SupabaseAccountConfigRepository(supabaseClient, userId),
+      jobRepository: new SupabaseJobRepository(supabaseClient, userId),
+      rawRecordRepository: new SupabaseRawRecordRepository(supabaseClient, userId),
+      normalizedRecordRepository: new SupabaseNormalizedRecordRepository(supabaseClient, userId),
+      sheetSnapshotRepository: new SupabaseSheetSnapshotRepository(supabaseClient, userId),
+    });
+  }
 
   if (config.seedDemoData) {
     await seedDemoData({
@@ -210,8 +237,8 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     config,
   });
   const userApprovalService = new UserApprovalService({
-    store,
     userRepository: repositories.userRepository,
+    outboxMessageRepository: repositories.outboxMessageRepository,
     clock: config.clock,
   });
   const passwordResetService = new PasswordResetService({
@@ -285,15 +312,21 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     });
   });
 
+  const requireAuth = supabaseClient ? createRequireAuth(supabaseClient) : null;
+
   fastify.get("/health", async (request, reply) => {
     handleHealthRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.get("/api/v1/ui/accounts", async (request, reply) => {
+  fastify.get("/api/v1/ui/accounts", {
+    preHandler: requireAuth ?? undefined,
+  }, async (request, reply) => {
     await handleUiAccountsRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.get("/api/v1/ui/accounts/:platform/:accountId", async (request, reply) => {
+  fastify.get("/api/v1/ui/accounts/:platform/:accountId", {
+    preHandler: requireAuth ?? undefined,
+  }, async (request, reply) => {
     await handleUiAccountDetailRoute({
       req: request,
       res: reply,
@@ -327,11 +360,15 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     await handleResetPasswordRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.get("/api/v1/admin/pending-users", async (request, reply) => {
+  fastify.get("/api/v1/admin/pending-users", {
+    preHandler: requireAuth ?? undefined,
+  }, async (request, reply) => {
     await handlePendingUsersRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.post("/api/v1/admin/pending-users/:userId/approve", async (request, reply) => {
+  fastify.post("/api/v1/admin/pending-users/:userId/approve", {
+    preHandler: requireAuth ?? undefined,
+  }, async (request, reply) => {
     await handleApproveUserRoute({
       req: request,
       res: reply,
@@ -341,7 +378,9 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     });
   });
 
-  fastify.post("/api/v1/admin/pending-users/:userId/reject", async (request, reply) => {
+  fastify.post("/api/v1/admin/pending-users/:userId/reject", {
+    preHandler: requireAuth ?? undefined,
+  }, async (request, reply) => {
     await handleRejectUserRoute({
       req: request,
       res: reply,
