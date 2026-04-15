@@ -9,13 +9,21 @@ import { useAuth } from "../../contexts/AuthContext.js";
 type Theme = "dark" | "light";
 
 function getStoredTheme(): Theme {
-  const stored = localStorage.getItem("theme");
-  return stored === "light" ? "light" : "dark";
+  try {
+    const stored = typeof localStorage !== "undefined" ? localStorage.getItem("theme") : null;
+    return stored === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
 }
 
 function applyTheme(theme: Theme) {
   document.documentElement.setAttribute("data-theme", theme);
-  localStorage.setItem("theme", theme);
+  try {
+    localStorage.setItem("theme", theme);
+  } catch {
+    // localStorage not available (e.g. in test environment)
+  }
 }
 
 export function ProfileSettingsPage() {
