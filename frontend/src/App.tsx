@@ -1,68 +1,58 @@
 import { useCallback } from "react";
-import { PendingUsersPanel } from "./components/admin/PendingUsersPanel";
-import { AuthScreen } from "./components/auth/AuthScreen";
-import { AccountDetailPanel } from "./components/dashboard/AccountDetailPanel";
-import { AccountSidebar } from "./components/dashboard/AccountSidebar";
-import { HealthCardGrid } from "./components/dashboard/HealthCardGrid";
-import { PageErrorBanner } from "./components/dashboard/PageErrorBanner";
-import { SecurityBanner } from "./components/dashboard/SecurityBanner";
-import { AppShell } from "./components/layout/AppShell";
-import { HeroHeader } from "./components/layout/HeroHeader";
-import { useAutoRefresh } from "./hooks/useAutoRefresh";
-import { useAuthSession } from "./hooks/useAuthSession";
-import { useDashboardData } from "./hooks/useDashboardData";
-import { usePendingUsers } from "./hooks/usePendingUsers";
-import { useSelectedAccount } from "./hooks/useSelectedAccount";
-import { POLL_INTERVAL_MS } from "./utils/formatters";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthContext } from "./contexts/AuthContext.js";
+import { useAuthSession } from "./hooks/useAuthSession.js";
+import { useAutoRefresh } from "./hooks/useAutoRefresh.js";
+import { useDashboardData } from "./hooks/useDashboardData.js";
+import { AppShell } from "./components/layout/AppShell.js";
+import { LoginPage } from "./components/auth/LoginPage.js";
+import { RegisterPage } from "./components/auth/RegisterPage.js";
+import { ForgotPasswordPage } from "./components/auth/ForgotPasswordPage.js";
+import { ResetPasswordPage } from "./components/auth/ResetPasswordPage.js";
+import { ControlRoomPage } from "./components/dashboard/ControlRoomPage.js";
+import { AccountListPage } from "./components/dashboard/AccountListPage.js";
+import { AccountDetailPage } from "./components/dashboard/AccountDetailPage.js";
+import { SyncJobsPage } from "./components/dashboard/SyncJobsPage.js";
+import { PendingReviewPage } from "./components/admin/PendingReviewPage.js";
+import { UsersPage } from "./components/admin/UsersPage.js";
+import { SchedulerPage } from "./components/admin/SchedulerPage.js";
+import { TokensSettingsPage } from "./components/settings/TokensSettingsPage.js";
+import { ProfileSettingsPage } from "./components/settings/ProfileSettingsPage.js";
+import type { PublicUser } from "./types/api.js";
 
-export default function App() {
-  const {
-    authView,
-    error: authError,
-    forgotPassword,
-    isLoading: isAuthLoading,
-    isSubmitting: isAuthSubmitting,
-    login,
-    logout,
-    message: authMessage,
-    register,
-    resetPassword,
-    switchMode,
-    user,
-  } = useAuthSession();
-  const {
-    accounts,
-    capabilities,
-    error: dashboardError,
-    health,
-    isLoading,
-    lastUpdated,
-    refreshDashboard,
-    refreshToken,
-  } = useDashboardData({ enabled: Boolean(user) });
-  const {
-    detailError,
-    isDetailLoading,
-    selectAccount,
-    selectedAccount,
-    selectedAccountKey,
-    selectedSummary,
-  } = useSelectedAccount(accounts, refreshToken, Boolean(user));
-  const pendingUsers = usePendingUsers({
-    enabled: user?.role === "admin",
-  });
+const POLL_INTERVAL_MS = 60_000;
 
-  const handleRefresh = useCallback(() => {
-    void refreshDashboard();
-  }, [refreshDashboard]);
+/** Route guard: redirects to /login if user is null (unauthenticated). */
+function AuthGuard({
+  user,
+  children,
+}: {
+  user: PublicUser | null;
+  children: React.ReactNode;
+}) {
+  if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
 
-  const handleApprovePendingUser = useCallback((userId: string) => {
-    void pendingUsers.approve(userId);
-  }, [pendingUsers]);
+/** Route guard: redirects to /dashboard if user is not admin. */
+function AdminGuard({
+  user,
+  children,
+}: {
+  user: PublicUser | null;
+  children: React.ReactNode;
+}) {
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== "admin") return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
 
-  const handleRejectPendingUser = useCallback((userId: string) => {
-    void pendingUsers.reject(userId);
-  }, [pendingUsers]);
+/** The router content — needs auth state to be available via AuthContext. */
+function AppRoutes() {
+  const auth = useAuthSession();
+  const { user, logout } = auth;
+
+  const { refreshDashboard } = useDashboardData({ enabled: Boolean(user) });
 
   const handleAutoRefresh = useCallback(() => {
     void refreshDashboard({ silent: true });
@@ -70,75 +60,159 @@ export default function App() {
 
   useAutoRefresh(handleAutoRefresh, POLL_INTERVAL_MS, Boolean(user));
 
-  if (isAuthLoading) {
-    return (
-      <AppShell>
-        <HeroHeader currentUser={null} isRefreshing={false} isSigningOut={false} lastUpdated={null} />
-        <section className="panel auth-panel">
-          <p className="muted">正在確認登入狀態...</p>
-        </section>
-      </AppShell>
-    );
-  }
+  const handleLogout = useCallback(() => {
+    void logout();
+  }, [logout]);
 
-  if (!user) {
-    return (
-      <AppShell>
-        <HeroHeader currentUser={null} isRefreshing={false} isSigningOut={false} lastUpdated={null} />
-        <AuthScreen
-          authView={authView}
-          error={authError}
-          isSubmitting={isAuthSubmitting}
-          login={login}
-          message={authMessage}
-          register={register}
-          requestPasswordReset={forgotPassword}
-          resetPassword={resetPassword}
-          switchMode={switchMode}
-        />
-      </AppShell>
-    );
+  if (auth.isLoading) {
+    return <div className="loading-screen">正在確認登入狀態...</div>;
   }
 
   return (
-    <AppShell>
-      <HeroHeader
-        currentUser={user}
-        isRefreshing={isLoading}
-        isSigningOut={isAuthSubmitting}
-        lastUpdated={lastUpdated}
-        onLogout={() => void logout()}
-        onRefresh={handleRefresh}
-      />
-      <SecurityBanner capabilities={capabilities} />
-      <PageErrorBanner
-        message={authError || dashboardError || detailError}
-      />
-      {user.role === "admin" ? (
-        <PendingUsersPanel
-          error={pendingUsers.error}
-          isLoading={pendingUsers.isLoading}
-          isSubmitting={pendingUsers.isSubmitting}
-          onApprove={handleApprovePendingUser}
-          onReject={handleRejectPendingUser}
-          users={pendingUsers.users}
+    <AuthContext.Provider value={auth}>
+      <Routes>
+        {/* ── Public auth routes ─────────────────────────────────── */}
+        <Route
+          path="/login"
+          element={
+            user ? <Navigate to="/dashboard" replace /> : <LoginPage />
+          }
         />
-      ) : null}
-      <HealthCardGrid health={health} />
+        <Route
+          path="/register"
+          element={
+            user ? <Navigate to="/dashboard" replace /> : <RegisterPage />
+          }
+        />
+        <Route
+          path="/forgot-password"
+          element={
+            user ? <Navigate to="/dashboard" replace /> : <ForgotPasswordPage />
+          }
+        />
+        <Route
+          path="/reset-password"
+          element={
+            user ? <Navigate to="/dashboard" replace /> : <ResetPasswordPage />
+          }
+        />
 
-      <section className="workspace-grid">
-        <AccountSidebar
-          accounts={accounts}
-          onSelect={selectAccount}
-          selectedAccountKey={selectedAccountKey}
+        {/* ── Protected routes (requires session) ────────────────── */}
+        <Route
+          path="/dashboard"
+          element={
+            <AuthGuard user={user}>
+              <AppShell user={user!} onLogout={handleLogout}>
+                <ControlRoomPage />
+              </AppShell>
+            </AuthGuard>
+          }
         />
-        <AccountDetailPanel
-          accounts={accounts}
-          isLoading={isDetailLoading}
-          selectedAccount={selectedAccount}
-          selectedAccountSummary={selectedSummary}
+        <Route
+          path="/accounts"
+          element={
+            <AuthGuard user={user}>
+              <AppShell user={user!} onLogout={handleLogout}>
+                <AccountListPage />
+              </AppShell>
+            </AuthGuard>
+          }
         />
-      </section>
-    </AppShell>
+        <Route
+          path="/accounts/:platform/:accountId"
+          element={
+            <AuthGuard user={user}>
+              <AppShell user={user!} onLogout={handleLogout}>
+                <AccountDetailPage />
+              </AppShell>
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/sync-jobs"
+          element={
+            <AuthGuard user={user}>
+              <AppShell user={user!} onLogout={handleLogout}>
+                <SyncJobsPage />
+              </AppShell>
+            </AuthGuard>
+          }
+        />
+
+        {/* ── Admin-only routes ───────────────────────────────────── */}
+        <Route
+          path="/admin/pending"
+          element={
+            <AdminGuard user={user}>
+              <AppShell user={user!} onLogout={handleLogout}>
+                <PendingReviewPage />
+              </AppShell>
+            </AdminGuard>
+          }
+        />
+        <Route
+          path="/admin/users"
+          element={
+            <AdminGuard user={user}>
+              <AppShell user={user!} onLogout={handleLogout}>
+                <UsersPage />
+              </AppShell>
+            </AdminGuard>
+          }
+        />
+        <Route
+          path="/admin/scheduler"
+          element={
+            <AdminGuard user={user}>
+              <AppShell user={user!} onLogout={handleLogout}>
+                <SchedulerPage />
+              </AppShell>
+            </AdminGuard>
+          }
+        />
+
+        {/* ── Settings routes ─────────────────────────────────────── */}
+        <Route
+          path="/settings/tokens"
+          element={
+            <AdminGuard user={user}>
+              <AppShell user={user!} onLogout={handleLogout}>
+                <TokensSettingsPage />
+              </AppShell>
+            </AdminGuard>
+          }
+        />
+        <Route
+          path="/settings/profile"
+          element={
+            <AuthGuard user={user}>
+              <AppShell user={user!} onLogout={handleLogout}>
+                <ProfileSettingsPage />
+              </AppShell>
+            </AuthGuard>
+          }
+        />
+
+        {/* ── Catch-all redirect ──────────────────────────────────── */}
+        <Route
+          path="*"
+          element={
+            user ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+      </Routes>
+    </AuthContext.Provider>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
   );
 }

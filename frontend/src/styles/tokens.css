@@ -1,14 +1,51 @@
+/* Tsukiyo Data Center — Design Tokens
+ * Dark theme is the default (:root). Light theme overrides via [data-theme="light"].
+ */
+
+:root,
+[data-theme="dark"] {
+  --color-accent:      #C9A962;
+  --color-accent-soft: #C9A96233;
+  --color-bg:          #0A0A0A;
+  --color-border:      #2A2A2A;
+  --color-error:       #c0392b;
+  --color-muted:       #8A8A8A;
+  --color-panel:       #121212;
+  --color-panel-alt:   #151515;
+  --color-subtle:      #5B5B5B;
+  --color-success:     #7FD1A4;
+  --color-text:        #FFFFFF;
+  --color-warning:     #D9B36C;
+}
+
+[data-theme="light"] {
+  --color-accent:      #a8791a;
+  --color-accent-soft: #f1e3bb;
+  --color-bg:          #f6f2ea;
+  --color-border:      #e4d9ca;
+  --color-error:       #c0392b;
+  --color-muted:       #7a6b59;
+  --color-panel:       #ffffff;
+  --color-panel-alt:   #fbf7f0;
+  --color-success:     #2c8b66;
+  --color-text:        #211a12;
+  --color-warning:     #b8791c;
+}
+
 :root {
-  color-scheme: light;
-  --bg: #f4f7fb;
-  --panel: #ffffff;
-  --border: #d7dfeb;
-  --text: #172033;
-  --muted: #61708a;
-  --primary: #2559d6;
-  --primary-soft: #e8efff;
-  --success: #1f8f5f;
-  --warning: #a46700;
-  --error: #b42f3b;
-  --shadow: 0 14px 32px rgba(23, 32, 51, 0.08);
+  --font-ui:      "Inter", "Noto Sans TC", sans-serif;
+  --font-display: "Baskerville", "Noto Serif TC", serif;
+  --font-mono:    "SF Mono", "Menlo", "Consolas", monospace;
+
+  --space-xs:  6px;
+  --space-sm:  11px;
+  --space-md:  16px;
+  --space-lg:  22px;
+  --space-xl:  30px;
+  --space-2xl: 48px;
+
+  --radius-sm: 8px;
+  --radius-md: 10px;
+
+  --sidebar-width: 280px;
 }
