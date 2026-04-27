@@ -1,7 +1,5 @@
 import { HttpError } from "../lib/errors.ts";
 import { makeAccountKey } from "../repositories/account-config-repository.ts";
-import type { AccountConfigRepository } from "../repositories/account-config-repository.ts";
-import type { SheetSnapshotRepository } from "../repositories/sheet-snapshot-repository.ts";
 import type { AccountConfig } from "../types/account-config.ts";
 import type { SheetStatusSnapshot, SheetOutputSnapshot } from "../types/sheet.ts";
 
@@ -13,9 +11,18 @@ const UI_CAPABILITIES = Object.freeze({
     "儀表板目前僅提供唯讀檢視；手動刷新與排程同步仍需透過簽章保護的伺服器 API 進行。",
 });
 
+interface DashboardAccountRepository {
+  listAll(): Promise<AccountConfig[]>;
+}
+
+interface DashboardSheetSnapshotRepository {
+  listStatuses(): Promise<SheetStatusSnapshot[]>;
+  listOutputs(): Promise<SheetOutputSnapshot[]>;
+}
+
 interface UiDashboardServiceOptions {
-  accountRepository: AccountConfigRepository;
-  sheetSnapshotRepository: SheetSnapshotRepository;
+  accountRepository: DashboardAccountRepository;
+  sheetSnapshotRepository: DashboardSheetSnapshotRepository;
   clock: () => Date;
 }
 
@@ -99,8 +106,8 @@ function buildUiAccount(
 }
 
 export class UiDashboardService {
-  readonly accountRepository: AccountConfigRepository;
-  readonly sheetSnapshotRepository: SheetSnapshotRepository;
+  readonly accountRepository: DashboardAccountRepository;
+  readonly sheetSnapshotRepository: DashboardSheetSnapshotRepository;
   readonly clock: () => Date;
 
   constructor({ accountRepository, sheetSnapshotRepository, clock }: UiDashboardServiceOptions) {

@@ -128,6 +128,72 @@ function createCorsOriginResolver(config: AppConfig) {
 
 const MIGRATION_SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000001';
 
+async function resolveSupabaseStorageUserId(
+  supabaseClient: ReturnType<typeof createSupabaseClient>,
+  config: AppConfig,
+): Promise<string> {
+  if (!config.bootstrapAdminEmail || !config.bootstrapAdminPassword) {
+    if (config.seedDemoData) {
+      throw new Error(
+        "Supabase demo seed requires BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD.",
+      );
+    }
+    return MIGRATION_SYSTEM_USER_ID;
+  }
+
+  const { data, error } = await supabaseClient.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
+  if (error) {
+    throw error;
+  }
+
+  const bootstrapAdmin = data.users.find(
+    (user) => user.email?.trim().toLowerCase() === config.bootstrapAdminEmail?.trim().toLowerCase(),
+  );
+
+  const appMetadata = { role: "admin", status: "active" };
+  const userMetadata = { name: config.bootstrapAdminName };
+
+  if (bootstrapAdmin) {
+    const { error: updateError } = await supabaseClient.auth.admin.updateUserById(
+      bootstrapAdmin.id,
+      {
+        app_metadata: {
+          ...bootstrapAdmin.app_metadata,
+          ...appMetadata,
+        },
+        user_metadata: {
+          ...bootstrapAdmin.user_metadata,
+          ...userMetadata,
+        },
+      },
+    );
+    if (updateError) {
+      throw updateError;
+    }
+
+    return bootstrapAdmin.id;
+  }
+
+  const { data: created, error: createError } = await supabaseClient.auth.admin.createUser({
+    email: config.bootstrapAdminEmail,
+    password: config.bootstrapAdminPassword,
+    email_confirm: true,
+    app_metadata: appMetadata,
+    user_metadata: userMetadata,
+  });
+  if (createError) {
+    throw createError;
+  }
+  if (!created.user) {
+    throw new Error("Supabase bootstrap admin creation returned no user.");
+  }
+
+  return created.user.id;
+}
+
 export async function createApp(overrides: ConfigOverrides = {}): Promise<AppInstance> {
   const config = loadConfig(overrides);
   const store = new FileStore(config.dataDir);
@@ -165,7 +231,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     : null;
 
   if (supabaseClient) {
-    const userId = MIGRATION_SYSTEM_USER_ID;
+    const userId = await resolveSupabaseStorageUserId(supabaseClient, config);
     Object.assign(repositories, {
       accountRepository: new SupabaseAccountConfigRepository(supabaseClient, userId),
       jobRepository: new SupabaseJobRepository(supabaseClient, userId),
