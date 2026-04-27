@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '../../lib/supabase-client.ts';
 import type { SheetStatusSnapshot, SheetOutputSnapshot } from '../../types/sheet.ts';
 
+function makeAccountKey(platform: unknown, accountId: unknown): string {
+  return `${String(platform)}:${String(accountId)}`;
+}
+
 export class SupabaseSheetSnapshotRepository {
   private readonly client: SupabaseClient;
   private readonly userId: string;
@@ -44,8 +48,77 @@ export class SupabaseSheetSnapshotRepository {
   }
 
   async listOutputs(): Promise<SheetOutputSnapshot[]> {
-    // Phase 2 stub — Phase 4 補完
-    return [];
+    const [{ data: configs, error: configError }, { data: records, error: recordError }] =
+      await Promise.all([
+        this.client
+          .from('account_configs')
+          .select('platform, account_id, sheet_id, sheet_tab')
+          .eq('user_id', this.userId),
+        this.client
+          .from('normalized_records')
+          .select(`
+            platform,
+            account_id,
+            post_id,
+            post_timestamp,
+            caption,
+            media_type,
+            like_count,
+            comment_count,
+            view_count,
+            share_count,
+            created_at
+          `)
+          .eq('user_id', this.userId)
+          .order('post_timestamp', { ascending: false }),
+      ]);
+
+    if (configError) throw configError;
+    if (recordError) throw recordError;
+
+    const configByKey = new Map(
+      (configs ?? []).map((row) => {
+        const r = row as Record<string, unknown>;
+        return [makeAccountKey(r.platform, r.account_id), r];
+      }),
+    );
+    const outputByKey = new Map<string, SheetOutputSnapshot>();
+
+    for (const row of records ?? []) {
+      const r = row as Record<string, unknown>;
+      const accountKey = makeAccountKey(r.platform, r.account_id);
+      const config = configByKey.get(accountKey) ?? {};
+      const createdAt = (r.created_at as string | null) ?? new Date().toISOString();
+      const existing = outputByKey.get(accountKey);
+      const output = existing ?? {
+        sheetId: (config.sheet_id as string) ?? '',
+        sheetRowKey: (config.sheet_tab as string) ?? '',
+        platform: r.platform as SheetOutputSnapshot['platform'],
+        accountId: r.account_id as string,
+        syncedAt: createdAt,
+        rows: [],
+      };
+
+      if (Date.parse(createdAt) > Date.parse(output.syncedAt)) {
+        output.syncedAt = createdAt;
+      }
+
+      output.rows.push({
+        content_id: r.post_id as string,
+        content_type: (r.media_type as string) ?? 'UNKNOWN',
+        published_at: (r.post_timestamp as string) ?? '',
+        caption: (r.caption as string) ?? '',
+        url: '',
+        views: (r.view_count as number) ?? 0,
+        likes: (r.like_count as number) ?? 0,
+        comments: (r.comment_count as number) ?? 0,
+        shares: (r.share_count as number) ?? 0,
+        data_status: 'fresh',
+      });
+      outputByKey.set(accountKey, output);
+    }
+
+    return [...outputByKey.values()];
   }
 
   async upsertStatus(snapshot: SheetStatusSnapshot): Promise<SheetStatusSnapshot[]> {
@@ -81,7 +154,6 @@ export class SupabaseSheetSnapshotRepository {
   }
 
   async upsertOutput(_snapshot: SheetOutputSnapshot): Promise<SheetOutputSnapshot[]> {
-    // Phase 2 stub — Phase 4 補完
-    return [];
+    return this.listOutputs();
   }
 }
