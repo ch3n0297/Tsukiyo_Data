@@ -18,8 +18,8 @@ function mapSupabaseUser(user: {
     id: user.id,
     email: user.email ?? '',
     displayName: (meta.name as string) ?? (user.email ?? ''),
-    role: (appMeta.role as PublicUser['role']) ?? (meta.role as PublicUser['role']) ?? 'member',
-    status: (appMeta.status as PublicUser['status']) ?? (meta.status as PublicUser['status']) ?? 'active',
+    role: (appMeta.role as PublicUser['role']) ?? 'member',
+    status: (appMeta.status as PublicUser['status']) ?? (meta.status as PublicUser['status']) ?? 'pending',
     approvedAt: null,
     approvedBy: null,
     lastLoginAt: null,
@@ -36,7 +36,11 @@ function requireSupabase() {
 export async function signInWithSupabase(email: string, password: string): Promise<PublicUser> {
   const { data, error } = await requireSupabase().auth.signInWithPassword({ email, password });
   if (error) throw new Error(error.message);
-  return mapSupabaseUser(data.user);
+  const user = mapSupabaseUser(data.user);
+  if (user.status !== 'active') {
+    throw new Error('帳號尚待管理員核准，暫時無法登入。');
+  }
+  return user;
 }
 
 export async function signOutWithSupabase(): Promise<void> {

@@ -313,6 +313,9 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
   });
 
   const requireAuth = supabaseClient ? createRequireAuth(supabaseClient) : null;
+  const requireAdmin = supabaseClient
+    ? createRequireAuth(supabaseClient, { requireAdmin: true })
+    : null;
 
   fastify.get("/health", async (request, reply) => {
     handleHealthRoute({ req: request, res: reply, services, config });
@@ -361,13 +364,13 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
   });
 
   fastify.get("/api/v1/admin/pending-users", {
-    preHandler: requireAuth ?? undefined,
+    preHandler: requireAdmin ?? undefined,
   }, async (request, reply) => {
     await handlePendingUsersRoute({ req: request, res: reply, services, config });
   });
 
   fastify.post("/api/v1/admin/pending-users/:userId/approve", {
-    preHandler: requireAuth ?? undefined,
+    preHandler: requireAdmin ?? undefined,
   }, async (request, reply) => {
     await handleApproveUserRoute({
       req: request,
@@ -379,7 +382,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
   });
 
   fastify.post("/api/v1/admin/pending-users/:userId/reject", {
-    preHandler: requireAuth ?? undefined,
+    preHandler: requireAdmin ?? undefined,
   }, async (request, reply) => {
     await handleRejectUserRoute({
       req: request,

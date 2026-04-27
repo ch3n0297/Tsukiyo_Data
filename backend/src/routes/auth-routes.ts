@@ -1,5 +1,6 @@
 import { toErrorResponse } from "../lib/errors.ts";
 import { getRequestOrigin, readJsonRequest, sendJson, setResponseCookie } from "../lib/http.ts";
+import { refreshLegacySessionCookie, requireRouteAdmin } from "./route-auth.ts";
 import {
   validateForgotPasswordPayload,
   validateLoginPayload,
@@ -116,8 +117,8 @@ export async function handleResetPasswordRoute({ req, res, services, config }: R
 
 export async function handlePendingUsersRoute({ req, res, services }: RouteContext): Promise<void> {
   try {
-    const context = await services.userAuthService.requireAdminUser(req);
-    setResponseCookie(res, services.userAuthService.createSessionCookie(context.session.id));
+    const context = await requireRouteAdmin(req, services);
+    refreshLegacySessionCookie(res, services, context);
     const users = await services.userApprovalService.listPendingUsers();
     sendJson(res, 200, {
       users,
@@ -130,8 +131,8 @@ export async function handlePendingUsersRoute({ req, res, services }: RouteConte
 
 export async function handleApproveUserRoute({ req, res, services, params }: RouteContextWithParams): Promise<void> {
   try {
-    const context = await services.userAuthService.requireAdminUser(req);
-    setResponseCookie(res, services.userAuthService.createSessionCookie(context.session.id));
+    const context = await requireRouteAdmin(req, services);
+    refreshLegacySessionCookie(res, services, context);
     const user = await services.userApprovalService.approveUser({
       targetUserId: params.userId,
       adminUser: context.user,
@@ -149,8 +150,8 @@ export async function handleApproveUserRoute({ req, res, services, params }: Rou
 
 export async function handleRejectUserRoute({ req, res, services, params }: RouteContextWithParams): Promise<void> {
   try {
-    const context = await services.userAuthService.requireAdminUser(req);
-    setResponseCookie(res, services.userAuthService.createSessionCookie(context.session.id));
+    const context = await requireRouteAdmin(req, services);
+    refreshLegacySessionCookie(res, services, context);
     const user = await services.userApprovalService.rejectUser({
       targetUserId: params.userId,
       adminUser: context.user,

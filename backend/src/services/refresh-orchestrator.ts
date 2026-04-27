@@ -208,16 +208,22 @@ export class RefreshOrchestrator {
     rawRecords: StoredRawRecord[],
     normalizedRecords: NormalizedRecord[]
   ): Promise<void> {
-    const store = this.rawRecordRepository.store;
+    const rawStore = (this.rawRecordRepository as { store?: RawRecordRepository["store"] }).store;
+    const normalizedStore = (
+      this.normalizedRecordRepository as { store?: NormalizedRecordRepository["store"] }
+    ).store;
 
     if (
-      store !== this.normalizedRecordRepository.store ||
-      typeof store.updateCollections !== "function"
+      !rawStore ||
+      !normalizedStore ||
+      rawStore !== normalizedStore ||
+      typeof rawStore.updateCollections !== "function"
     ) {
       await this.rawRecordRepository.appendMany(rawRecords);
       await this.normalizedRecordRepository.replaceForAccount(accountKey, normalizedRecords);
       return;
     }
+    const store = rawStore;
 
     type RefreshCollections = {
       [key: string]: unknown[];

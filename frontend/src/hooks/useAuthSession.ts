@@ -96,8 +96,17 @@ export function useAuthSession() {
 
     try {
       if (USE_SUPABASE_AUTH) {
-        const p = (payload ?? {}) as { email?: string; password?: string; display_name?: string };
-        await signUpWithSupabase(p.email ?? '', p.password ?? '', p.display_name ?? '');
+        const p = (payload ?? {}) as {
+          displayName?: string;
+          display_name?: string;
+          email?: string;
+          password?: string;
+        };
+        await signUpWithSupabase(
+          p.email ?? '',
+          p.password ?? '',
+          p.display_name ?? p.displayName ?? '',
+        );
         setMessage("註冊成功，請等待管理員審核。");
         setMode("login");
       } else {
@@ -177,7 +186,7 @@ export function useAuthSession() {
   }, []);
 
   const submitPasswordReset = useCallback(
-    async (payload: { password: string }) => {
+    async (payload: { password: string }): Promise<boolean> => {
       setIsSubmitting(true);
       setError("");
       setMessage("");
@@ -196,8 +205,10 @@ export function useAuthSession() {
         setMode("login");
         setResetToken("");
         window.history.replaceState({}, "", "/");
+        return true;
       } catch (requestError) {
         setError((requestError as Error).message);
+        return false;
       } finally {
         setIsSubmitting(false);
       }

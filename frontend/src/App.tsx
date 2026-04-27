@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthContext } from "./contexts/AuthContext.js";
 import { useAuthSession } from "./hooks/useAuthSession.js";
 import { useAutoRefresh } from "./hooks/useAutoRefresh.js";
-import { useDashboardData } from "./hooks/useDashboardData.js";
+import { DASHBOARD_REFRESH_EVENT } from "./hooks/useDashboardData.js";
 import { AppShell } from "./components/layout/AppShell.js";
 import { LoginPage } from "./components/auth/LoginPage.js";
 import { RegisterPage } from "./components/auth/RegisterPage.js";
@@ -30,7 +30,7 @@ function AuthGuard({
   user: PublicUser | null;
   children: React.ReactNode;
 }) {
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user || user.status !== "active") return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
@@ -42,7 +42,7 @@ function AdminGuard({
   user: PublicUser | null;
   children: React.ReactNode;
 }) {
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user || user.status !== "active") return <Navigate to="/login" replace />;
   if (user.role !== "admin") return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
@@ -51,14 +51,13 @@ function AdminGuard({
 function AppRoutes() {
   const auth = useAuthSession();
   const { user, logout } = auth;
-
-  const { refreshDashboard } = useDashboardData({ enabled: Boolean(user) });
+  const hasActiveUser = user?.status === "active";
 
   const handleAutoRefresh = useCallback(() => {
-    void refreshDashboard({ silent: true });
-  }, [refreshDashboard]);
+    window.dispatchEvent(new Event(DASHBOARD_REFRESH_EVENT));
+  }, []);
 
-  useAutoRefresh(handleAutoRefresh, POLL_INTERVAL_MS, Boolean(user));
+  useAutoRefresh(handleAutoRefresh, POLL_INTERVAL_MS, hasActiveUser);
 
   const handleLogout = useCallback(() => {
     void logout();
@@ -75,25 +74,25 @@ function AppRoutes() {
         <Route
           path="/login"
           element={
-            user ? <Navigate to="/dashboard" replace /> : <LoginPage />
+            hasActiveUser ? <Navigate to="/dashboard" replace /> : <LoginPage />
           }
         />
         <Route
           path="/register"
           element={
-            user ? <Navigate to="/dashboard" replace /> : <RegisterPage />
+            hasActiveUser ? <Navigate to="/dashboard" replace /> : <RegisterPage />
           }
         />
         <Route
           path="/forgot-password"
           element={
-            user ? <Navigate to="/dashboard" replace /> : <ForgotPasswordPage />
+            hasActiveUser ? <Navigate to="/dashboard" replace /> : <ForgotPasswordPage />
           }
         />
         <Route
           path="/reset-password"
           element={
-            user ? <Navigate to="/dashboard" replace /> : <ResetPasswordPage />
+            hasActiveUser ? <Navigate to="/dashboard" replace /> : <ResetPasswordPage />
           }
         />
 
@@ -197,7 +196,7 @@ function AppRoutes() {
         <Route
           path="*"
           element={
-            user ? (
+            hasActiveUser ? (
               <Navigate to="/dashboard" replace />
             ) : (
               <Navigate to="/login" replace />

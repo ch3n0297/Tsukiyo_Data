@@ -66,6 +66,25 @@ describe("ResetPasswordPage", () => {
     });
   });
 
+  test("stays on reset form when resetPassword reports failure", async () => {
+    const resetPassword = vi.fn(async () => false);
+    renderReset({
+      authView: { mode: "reset", resetToken: "valid-token-abc" },
+      error: "重設失敗",
+      resetPassword,
+    });
+
+    fireEvent.change(screen.getByLabelText("新密碼"), {
+      target: { value: "newpassword123" },
+    });
+    fireEvent.submit(screen.getByRole("button", { name: "重設密碼" }).closest("form")!);
+
+    await waitFor(() => {
+      expect(resetPassword).toHaveBeenCalledWith({ password: "newpassword123" });
+    });
+    expect(screen.getByLabelText("新密碼")).toBeInTheDocument();
+  });
+
   test("shows loading state while submitting", () => {
     renderReset({ authView: { mode: "reset", resetToken: "abc" }, isSubmitting: true });
     expect(screen.getByRole("button", { name: "載入中..." })).toBeDisabled();

@@ -62,7 +62,7 @@ describe("RegisterPage", () => {
 
     await waitFor(() => {
       expect(register).toHaveBeenCalledWith({
-        displayName: "王小明",
+        display_name: "王小明",
         email: "user@example.com",
         password: "password12345",
       });

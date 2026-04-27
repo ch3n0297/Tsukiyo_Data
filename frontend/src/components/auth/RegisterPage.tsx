@@ -14,7 +14,7 @@ export function RegisterPage() {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    await register({ displayName, email, password });
+    await register({ display_name: displayName, email, password });
   }
 
   return (

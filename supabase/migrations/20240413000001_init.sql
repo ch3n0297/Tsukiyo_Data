@@ -1,7 +1,7 @@
 -- account_configs
 CREATE TABLE account_configs (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id       UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id       UUID NOT NULL,
   client_name   TEXT NOT NULL,
   platform      TEXT NOT NULL CHECK (platform IN ('instagram', 'facebook', 'tiktok')),
   account_id    TEXT NOT NULL,
@@ -17,7 +17,7 @@ CREATE POLICY "users_own_data" ON account_configs FOR ALL USING (auth.uid() = us
 -- jobs
 CREATE TABLE jobs (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id           UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id           UUID NOT NULL,
   account_config_id UUID NOT NULL REFERENCES account_configs(id),
   trigger_source    TEXT NOT NULL CHECK (trigger_source IN ('scheduled', 'manual')),
   refresh_days      INTEGER NOT NULL,
@@ -39,7 +39,7 @@ CREATE POLICY "users_own_data" ON jobs FOR ALL USING (auth.uid() = user_id);
 -- raw_records
 CREATE TABLE raw_records (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id         UUID NOT NULL,
   job_id          UUID REFERENCES jobs(id),
   platform        TEXT NOT NULL,
   account_id      TEXT NOT NULL,
@@ -54,7 +54,7 @@ CREATE POLICY "users_own_data" ON raw_records FOR ALL USING (auth.uid() = user_i
 -- normalized_records
 CREATE TABLE normalized_records (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id         UUID NOT NULL,
   job_id          UUID REFERENCES jobs(id),
   platform        TEXT NOT NULL,
   account_id      TEXT NOT NULL,
@@ -76,7 +76,7 @@ CREATE POLICY "users_own_data" ON normalized_records FOR ALL USING (auth.uid() =
 -- sheet_snapshots
 CREATE TABLE sheet_snapshots (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id           UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id           UUID NOT NULL,
   account_config_id UUID NOT NULL REFERENCES account_configs(id),
   refresh_status    TEXT,
   system_message    TEXT,
@@ -91,7 +91,7 @@ CREATE POLICY "users_own_data" ON sheet_snapshots FOR ALL USING (auth.uid() = us
 -- platform_tokens
 CREATE TABLE platform_tokens (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id         UUID NOT NULL,
   platform        TEXT NOT NULL CHECK (platform IN ('instagram', 'facebook', 'tiktok', 'google')),
   account_id      TEXT,
   access_token    TEXT NOT NULL,

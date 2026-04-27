@@ -17,7 +17,10 @@ export function ResetPasswordPage() {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    await resetPassword({ password });
+    const succeeded = await resetPassword({ password });
+    if (succeeded === false) {
+      return;
+    }
     setDone(true);
     void navigate("/login");
   }
