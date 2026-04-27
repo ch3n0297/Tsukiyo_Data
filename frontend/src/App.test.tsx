@@ -61,6 +61,32 @@ const ACCOUNTS_RESPONSE = {
   ],
 };
 
+const ACCOUNT_DETAIL_RESPONSE = {
+  capabilities: ACCOUNTS_RESPONSE.capabilities,
+  generatedAt: "2026-03-18T00:00:00.000Z",
+  account: {
+    ...ACCOUNTS_RESPONSE.accounts[0],
+    latestOutput: {
+      rowCount: 1,
+      rows: [
+        {
+          caption: "Redirect target row",
+          comments: 8,
+          content_id: "ig-redirect-post",
+          content_type: "reel",
+          data_status: "fresh",
+          likes: 45,
+          published_at: "2026-03-17T10:00:00.000Z",
+          shares: 3,
+          url: "https://instagram.example.com/p/ig-redirect-post",
+          views: 510,
+        },
+      ],
+      syncedAt: "2026-03-17T10:00:00.000Z",
+    },
+  },
+};
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -91,6 +117,72 @@ test("renders login form when there is no active session", async () => {
   expect(screen.getByLabelText("Email")).toBeInTheDocument();
   expect(screen.getByLabelText("密碼")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "登入" })).toBeInTheDocument();
+});
+
+test("protected routes preserve a safe redirect target through login", async () => {
+  const fetchMock = vi.fn(async (url: string, options: RequestInit = {}) => {
+    if (url === "/api/v1/auth/me") {
+      return createJsonResponse(401, {
+        error: "AUTH_REQUIRED",
+        system_message: "請先登入後再存取此功能。",
+      });
+    }
+    if (url === "/api/v1/auth/login") {
+      expect(options.method).toBe("POST");
+      return createJsonResponse(200, { user: ADMIN_USER });
+    }
+    if (url === "/health") return createJsonResponse(200, HEALTH_OK);
+    if (url === "/api/v1/ui/accounts") return createJsonResponse(200, ACCOUNTS_RESPONSE);
+    if (url === "/api/v1/ui/accounts/instagram/acct-instagram-demo") {
+      return createJsonResponse(200, ACCOUNT_DETAIL_RESPONSE);
+    }
+    return createJsonResponse(404, { error: "NOT_FOUND", system_message: `Unexpected: ${url}` });
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  window.history.replaceState({}, "", "/accounts/instagram/acct-instagram-demo");
+
+  render(<App />);
+
+  await screen.findByRole("heading", { name: "歡迎回來" });
+  expect(window.location.pathname).toBe("/login");
+  expect(new URLSearchParams(window.location.search).get("redirectTo")).toBe(
+    "/accounts/instagram/acct-instagram-demo",
+  );
+
+  fireEvent.change(screen.getByLabelText("Email"), {
+    target: { value: "admin@example.com" },
+  });
+  fireEvent.change(screen.getByLabelText("密碼"), {
+    target: { value: "password12345" },
+  });
+  fireEvent.submit(screen.getByRole("button", { name: "登入" }).closest("form")!);
+
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/accounts/instagram/acct-instagram-demo");
+  });
+  expect(window.location.href).not.toContain("access_token");
+  await screen.findByText("ig-redirect-post");
+});
+
+test("login ignores external redirect targets for active sessions", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      if (url === "/api/v1/auth/me") return createJsonResponse(200, { user: ADMIN_USER });
+      if (url === "/health") return createJsonResponse(200, HEALTH_OK);
+      if (url === "/api/v1/ui/accounts") return createJsonResponse(200, ACCOUNTS_RESPONSE);
+      if (url === "/api/v1/admin/pending-users") return createJsonResponse(200, { users: [] });
+      return createJsonResponse(404, { error: "NOT_FOUND", system_message: `Unexpected: ${url}` });
+    }),
+  );
+  window.history.replaceState({}, "", "/login?redirectTo=https%3A%2F%2Fevil.example%2F");
+
+  render(<App />);
+
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/dashboard");
+  });
 });
 
 test("auth layout brand area is always dark (#0A0A0A)", async () => {

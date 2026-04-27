@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthContext } from "./contexts/AuthContext.js";
 import { useAuthSession } from "./hooks/useAuthSession.js";
 import { useAutoRefresh } from "./hooks/useAutoRefresh.js";
@@ -21,6 +21,33 @@ import { ProfileSettingsPage } from "./components/settings/ProfileSettingsPage.j
 import type { PublicUser } from "./types/api.js";
 
 const POLL_INTERVAL_MS = 60_000;
+const DEFAULT_AUTH_DESTINATION = "/dashboard";
+const AUTH_ROUTE_PATHS = new Set(["/login", "/register", "/forgot-password", "/reset-password"]);
+
+function normalizeRedirectTo(value: string | null | undefined): string {
+  const trimmed = value?.trim();
+  if (!trimmed || !trimmed.startsWith("/") || trimmed.startsWith("//")) {
+    return DEFAULT_AUTH_DESTINATION;
+  }
+
+  try {
+    const url = new URL(trimmed, "https://datatsukiyo.local");
+    if (AUTH_ROUTE_PATHS.has(url.pathname)) {
+      return DEFAULT_AUTH_DESTINATION;
+    }
+
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return DEFAULT_AUTH_DESTINATION;
+  }
+}
+
+function buildLoginRedirect(location: { pathname: string; search: string; hash: string }): string {
+  const redirectTo = normalizeRedirectTo(
+    `${location.pathname}${location.search}${location.hash}`,
+  );
+  return `/login?redirectTo=${encodeURIComponent(redirectTo)}`;
+}
 
 /** Route guard: redirects to /login if user is null (unauthenticated). */
 function AuthGuard({
@@ -30,7 +57,12 @@ function AuthGuard({
   user: PublicUser | null;
   children: React.ReactNode;
 }) {
-  if (!user || user.status !== "active") return <Navigate to="/login" replace />;
+  const location = useLocation();
+
+  if (!user || user.status !== "active") {
+    return <Navigate to={buildLoginRedirect(location)} replace />;
+  }
+
   return <>{children}</>;
 }
 
@@ -42,7 +74,12 @@ function AdminGuard({
   user: PublicUser | null;
   children: React.ReactNode;
 }) {
-  if (!user || user.status !== "active") return <Navigate to="/login" replace />;
+  const location = useLocation();
+
+  if (!user || user.status !== "active") {
+    return <Navigate to={buildLoginRedirect(location)} replace />;
+  }
+
   if (user.role !== "admin") return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
@@ -50,8 +87,10 @@ function AdminGuard({
 /** The router content — needs auth state to be available via AuthContext. */
 function AppRoutes() {
   const auth = useAuthSession();
+  const location = useLocation();
   const { user, logout } = auth;
   const hasActiveUser = user?.status === "active";
+  const redirectTo = normalizeRedirectTo(new URLSearchParams(location.search).get("redirectTo"));
 
   const handleAutoRefresh = useCallback(() => {
     window.dispatchEvent(new Event(DASHBOARD_REFRESH_EVENT));
@@ -74,7 +113,7 @@ function AppRoutes() {
         <Route
           path="/login"
           element={
-            hasActiveUser ? <Navigate to="/dashboard" replace /> : <LoginPage />
+            hasActiveUser ? <Navigate to={redirectTo} replace /> : <LoginPage />
           }
         />
         <Route
