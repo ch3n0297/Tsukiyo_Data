@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import { HttpError } from "../lib/errors.ts";
 import { sanitizeUser } from "./user-auth-service.ts";
-import type { FileStore } from "../lib/fs-store.ts";
 import type { UserRepository } from "../repositories/user-repository.ts";
+import type { OutboxMessageRepository } from "../repositories/outbox-message-repository.ts";
+import type { SupabaseClient } from "../lib/supabase-client.ts";
 import type { PublicUser, User, UserStatus } from "../types/user.ts";
 import type { OutboxMessage } from "../types/outbox.ts";
 
@@ -35,19 +36,27 @@ interface DecideUserParams {
 }
 
 interface UserApprovalServiceOptions {
-  store: FileStore;
   userRepository: UserRepository;
+  outboxMessageRepository: OutboxMessageRepository;
+  supabaseClient?: SupabaseClient | null;
   clock: () => Date;
 }
 
 export class UserApprovalService {
-  readonly store: FileStore;
   readonly userRepository: UserRepository;
+  readonly outboxMessageRepository: OutboxMessageRepository;
+  readonly supabaseClient: SupabaseClient | null;
   readonly clock: () => Date;
 
-  constructor({ store, userRepository, clock }: UserApprovalServiceOptions) {
-    this.store = store;
+  constructor({
+    userRepository,
+    outboxMessageRepository,
+    supabaseClient = null,
+    clock,
+  }: UserApprovalServiceOptions) {
     this.userRepository = userRepository;
+    this.outboxMessageRepository = outboxMessageRepository;
+    this.supabaseClient = supabaseClient;
     this.clock = clock;
   }
 
@@ -104,51 +113,90 @@ export class UserApprovalService {
     invalidStatusMessage,
     outboxMessage,
   }: DecideUserParams): Promise<User | null> {
-    let updatedUser: User | null = null;
+    const user = await this.userRepository.findById(targetUserId);
+    if (!user) {
+      throw new HttpError(404, "USER_NOT_FOUND", "找不到指定的使用者。");
+    }
+    if (user.status !== "pending") {
+      throw new HttpError(409, "USER_STATUS_INVALID", invalidStatusMessage);
+    }
 
-    type Collections = { users: User[]; "outbox-messages": OutboxMessage[] };
-    await this.store.updateCollections<Collections>(
-      ["users", "outbox-messages"],
-      (collections) => {
-        const users = Array.isArray(collections.users) ? collections.users : [];
-        const outboxMessages = Array.isArray(collections["outbox-messages"])
-          ? collections["outbox-messages"]
-          : [];
-        const index = users.findIndex((user) => user.id === targetUserId);
+    const now = this.clock().toISOString();
+    await this.#syncSupabaseAuthMetadata(user, nextStatus);
 
-        if (index === -1) {
-          throw new HttpError(404, "USER_NOT_FOUND", "找不到指定的使用者。");
-        }
+    const updatedUser = await this.userRepository.updateById(targetUserId, {
+      status: nextStatus,
+      ...buildNextFields(now),
+      updatedAt: now,
+    });
 
-        const user = users[index];
-
-        if (user.status !== "pending") {
-          throw new HttpError(409, "USER_STATUS_INVALID", invalidStatusMessage);
-        }
-
-        const now = this.clock().toISOString();
-        updatedUser = {
-          ...user,
-          status: nextStatus,
-          ...buildNextFields(now),
-          updatedAt: now,
-        };
-        users[index] = updatedUser;
-        outboxMessages.push(
-          buildOutboxMessage({
-            clock: this.clock,
-            to: user.email,
-            ...outboxMessage,
-          }),
-        );
-
-        return {
-          users,
-          "outbox-messages": outboxMessages,
-        };
-      },
+    await this.outboxMessageRepository.create(
+      buildOutboxMessage({
+        clock: this.clock,
+        to: user.email,
+        ...outboxMessage,
+      }),
     );
 
     return updatedUser;
+  }
+
+  async #syncSupabaseAuthMetadata(user: User, status: UserStatus): Promise<void> {
+    if (!this.supabaseClient) {
+      return;
+    }
+
+    const authUserId = await this.#findSupabaseAuthUserId(user);
+    if (!authUserId) {
+      throw new HttpError(502, "SUPABASE_USER_NOT_FOUND", "找不到對應的 Supabase Auth 使用者。");
+    }
+
+    const { data, error: readError } = await this.supabaseClient.auth.admin.getUserById(authUserId);
+    if (readError) {
+      throw new HttpError(502, "SUPABASE_AUTH_ERROR", readError.message);
+    }
+
+    const existingMetadata =
+      data.user?.app_metadata &&
+      typeof data.user.app_metadata === "object" &&
+      !Array.isArray(data.user.app_metadata)
+        ? data.user.app_metadata
+        : {};
+
+    const { error } = await this.supabaseClient.auth.admin.updateUserById(authUserId, {
+      app_metadata: {
+        ...existingMetadata,
+        role: user.role,
+        status,
+      },
+    });
+
+    if (error) {
+      throw new HttpError(502, "SUPABASE_AUTH_ERROR", error.message);
+    }
+  }
+
+  async #findSupabaseAuthUserId(user: User): Promise<string | null> {
+    if (!this.supabaseClient) {
+      return null;
+    }
+
+    const { data, error } = await this.supabaseClient.auth.admin.getUserById(user.id);
+    if (!error && data.user) {
+      return data.user.id;
+    }
+
+    const { data: usersData, error: listError } = await this.supabaseClient.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000,
+    });
+    if (listError) {
+      throw new HttpError(502, "SUPABASE_AUTH_ERROR", listError.message);
+    }
+
+    const matchedUser = usersData.users.find(
+      (entry) => entry.email?.toLowerCase() === user.email.toLowerCase(),
+    );
+    return matchedUser?.id ?? null;
   }
 }

@@ -211,6 +211,7 @@ export class RefreshOrchestrator {
     const store = this.rawRecordRepository.store;
 
     if (
+      !store ||
       store !== this.normalizedRecordRepository.store ||
       typeof store.updateCollections !== "function"
     ) {

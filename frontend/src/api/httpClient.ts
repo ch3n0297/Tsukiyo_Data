@@ -32,13 +32,34 @@ export interface RequestJsonOptions {
   signal?: AbortSignal;
 }
 
+async function getSupabaseAuthHeader(): Promise<Record<string, string>> {
+  // 動態 import 避免 Supabase URL 未設定時的初始化錯誤
+  const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? '';
+  if (!supabaseUrl) return {};
+
+  try {
+    const { supabase } = await import('../lib/supabase-client');
+    if (!supabase) return {};
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      return { Authorization: `Bearer ${session.access_token}` };
+    }
+  } catch (err) {
+    // Supabase 未初始化或網路錯誤時降級為無 auth header（不中斷請求）
+    console.warn('[httpClient] getSupabaseAuthHeader failed:', err);
+  }
+  return {};
+}
+
 export async function requestJson(url: string, { body, headers, method = "GET", signal }: RequestJsonOptions = {}): Promise<unknown> {
+  const authHeaders = await getSupabaseAuthHeader();
   const response = await fetch(resolveApiUrl(url), {
     body: body === undefined ? undefined : JSON.stringify(body),
     credentials: "include",
     headers: {
       accept: "application/json",
       ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...authHeaders,
       ...headers,
     },
     method,
