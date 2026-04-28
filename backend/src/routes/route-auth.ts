@@ -1,8 +1,9 @@
 import { HttpError } from "../lib/errors.ts";
+import { setResponseCookie } from "../lib/http.ts";
 import { sanitizeUser } from "../services/user-auth-service.ts";
-import type { FastifyRequest } from "fastify";
-import type { Services } from "../types/app.ts";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import type { AuthUser } from "../middleware/require-auth.ts";
+import type { Services } from "../types/app.ts";
 import type { PublicUser, UserStatus } from "../types/user.ts";
 
 interface RouteAuthParams {
@@ -10,9 +11,27 @@ interface RouteAuthParams {
   services: Services;
 }
 
+type RouteAuthInput = FastifyRequest | RouteAuthParams;
+
 export interface RouteAuthContext {
   user: PublicUser;
   sessionCookie?: string;
+  sessionId?: string;
+}
+
+function resolveParams(input: RouteAuthInput, services?: Services): RouteAuthParams {
+  if ("req" in input && "services" in input) {
+    return input;
+  }
+
+  if (!services) {
+    throw new Error("Route auth services are required.");
+  }
+
+  return {
+    req: input,
+    services,
+  };
 }
 
 function readSupabaseUser(req: FastifyRequest): AuthUser | undefined {
@@ -44,9 +63,9 @@ function toPublicSupabaseUser(user: AuthUser): PublicUser {
     displayName: user.displayName,
     role: user.role,
     status: user.status,
-    approvedAt: null,
-    approvedBy: null,
-    lastLoginAt: null,
+    approvedAt: user.approvedAt,
+    approvedBy: user.approvedBy,
+    lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -65,33 +84,70 @@ async function resolveSupabaseUser(
   return sanitizeUser(legacyUser) ?? toPublicSupabaseUser(supabaseUser);
 }
 
-export async function requireRouteUser({
-  req,
-  services,
-}: RouteAuthParams): Promise<RouteAuthContext> {
+export async function requireRouteUser(params: RouteAuthParams): Promise<RouteAuthContext>;
+export async function requireRouteUser(
+  req: FastifyRequest,
+  services: Services,
+): Promise<RouteAuthContext>;
+export async function requireRouteUser(
+  input: RouteAuthInput,
+  services?: Services,
+): Promise<RouteAuthContext> {
+  const { req, services: resolvedServices } = resolveParams(input, services);
   const supabaseUser = readSupabaseUser(req);
 
   if (supabaseUser) {
-    const user = await resolveSupabaseUser(services, supabaseUser);
+    const user = await resolveSupabaseUser(resolvedServices, supabaseUser);
     assertActiveUser(user);
     return { user };
   }
 
-  const context = await services.userAuthService.requireAuthenticatedUser(req);
+  const context = await resolvedServices.userAuthService.requireAuthenticatedUser(req);
+  const sessionCookie = resolvedServices.userAuthService.createSessionCookie(context.session.id);
   return {
     user: context.user,
-    sessionCookie: services.userAuthService.createSessionCookie(context.session.id),
+    sessionCookie,
+    sessionId: context.session.id,
   };
 }
 
-export async function requireRouteAdminUser(
-  params: RouteAuthParams,
+export async function requireRouteAdmin(params: RouteAuthParams): Promise<RouteAuthContext>;
+export async function requireRouteAdmin(
+  req: FastifyRequest,
+  services: Services,
+): Promise<RouteAuthContext>;
+export async function requireRouteAdmin(
+  input: RouteAuthInput,
+  services?: Services,
 ): Promise<RouteAuthContext> {
-  const context = await requireRouteUser(params);
+  const context = await requireRouteUser(input as FastifyRequest, services as Services);
 
   if (context.user.role !== "admin") {
     throw new HttpError(403, "ADMIN_REQUIRED", "此功能需要管理員權限。");
   }
 
   return context;
+}
+
+export async function requireRouteAdminUser(
+  params: RouteAuthParams,
+): Promise<RouteAuthContext> {
+  return requireRouteAdmin(params);
+}
+
+export function refreshLegacySessionCookie(
+  res: FastifyReply,
+  services: Services,
+  authContext: RouteAuthContext,
+): void {
+  const cookie = authContext.sessionCookie ??
+    (authContext.sessionId
+      ? services.userAuthService.createSessionCookie(authContext.sessionId)
+      : undefined);
+
+  if (!cookie) {
+    return;
+  }
+
+  setResponseCookie(res, cookie);
 }

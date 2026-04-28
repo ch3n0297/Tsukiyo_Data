@@ -95,8 +95,12 @@ export async function requestPasswordResetWithSupabase(email: string): Promise<v
 }
 
 export async function getSupabaseCurrentUser(): Promise<PublicUser | null> {
-  const { data: { session }, error } = await requireSupabase().auth.getSession();
-  if (error) throw new Error(error.message);
+  const client = requireSupabase();
+  const {
+    data: { session },
+    error: sessionError,
+  } = await client.auth.getSession();
+  if (sessionError) throw new Error(sessionError.message);
   if (!session) return null;
 
   try {

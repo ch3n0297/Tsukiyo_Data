@@ -3,6 +3,10 @@ import App from "./App";
 import "./styles/tokens.css";
 import "./styles/globals.css";
 
+// Apply stored theme before first render to avoid flash
+const storedTheme = localStorage.getItem("theme");
+document.documentElement.setAttribute("data-theme", storedTheme === "light" ? "light" : "dark");
+
 const rootElement = document.querySelector("#root");
 
 if (!rootElement) {

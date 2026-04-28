@@ -6,6 +6,8 @@ import { FileStore } from "../lib/fs-store.ts";
 import { AccountConfigRepository } from "../repositories/account-config-repository.ts";
 import type { AccountConfig } from "../types/account-config.ts";
 
+const DEMO_REFRESH_DAYS = 90;
+
 export function createDemoAccounts(clock: () => Date): AccountConfig[] {
   const now = clock().toISOString();
 
@@ -15,7 +17,7 @@ export function createDemoAccounts(clock: () => Date): AccountConfig[] {
       clientName: "示範客戶",
       platform: "instagram",
       accountId: "acct-instagram-demo",
-      refreshDays: 7,
+      refreshDays: DEMO_REFRESH_DAYS,
       sheetId: "marketing-sheet",
       sheetRowKey: "row-instagram",
       isActive: true,
@@ -31,7 +33,7 @@ export function createDemoAccounts(clock: () => Date): AccountConfig[] {
       clientName: "示範客戶",
       platform: "facebook",
       accountId: "acct-facebook-demo",
-      refreshDays: 7,
+      refreshDays: DEMO_REFRESH_DAYS,
       sheetId: "marketing-sheet",
       sheetRowKey: "row-facebook",
       isActive: true,
@@ -47,7 +49,7 @@ export function createDemoAccounts(clock: () => Date): AccountConfig[] {
       clientName: "示範客戶",
       platform: "tiktok",
       accountId: "acct-tiktok-demo",
-      refreshDays: 7,
+      refreshDays: DEMO_REFRESH_DAYS,
       sheetId: "marketing-sheet",
       sheetRowKey: "row-tiktok",
       isActive: true,

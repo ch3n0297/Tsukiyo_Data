@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import fastifyCors from "@fastify/cors";
@@ -9,7 +8,6 @@ import { createPlatformRegistry } from "./adapters/platforms/platform-registry.t
 import { toErrorResponse } from "./lib/errors.ts";
 import { FileStore } from "./lib/fs-store.ts";
 import { createSupabaseClient } from "./lib/supabase-client.ts";
-import type { SupabaseClient } from "./lib/supabase-client.ts";
 import { sendJson } from "./lib/http.ts";
 import { AccountConfigRepository } from "./repositories/account-config-repository.ts";
 import { JobRepository } from "./repositories/job-repository.ts";
@@ -128,42 +126,72 @@ function createCorsOriginResolver(config: AppConfig) {
   };
 }
 
-const SUPABASE_STORAGE_USER_EMAIL = "migration-system@datatsukiyo.local";
+const MIGRATION_SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000001';
 
-async function ensureSupabaseStorageUser(supabaseClient: SupabaseClient): Promise<string> {
-  const { data: usersData, error: listError } = await supabaseClient.auth.admin.listUsers({
+async function resolveSupabaseStorageUserId(
+  supabaseClient: ReturnType<typeof createSupabaseClient>,
+  config: AppConfig,
+): Promise<string> {
+  if (!config.bootstrapAdminEmail || !config.bootstrapAdminPassword) {
+    if (config.seedDemoData) {
+      throw new Error(
+        "Supabase demo seed requires BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD.",
+      );
+    }
+    return MIGRATION_SYSTEM_USER_ID;
+  }
+
+  const { data, error } = await supabaseClient.auth.admin.listUsers({
     page: 1,
     perPage: 1000,
-  });
-  if (listError) {
-    throw listError;
-  }
-
-  const existingUser = usersData.users.find(
-    (user) => user.email?.toLowerCase() === SUPABASE_STORAGE_USER_EMAIL,
-  );
-  if (existingUser) {
-    return existingUser.id;
-  }
-
-  const { data, error } = await supabaseClient.auth.admin.createUser({
-    email: SUPABASE_STORAGE_USER_EMAIL,
-    password: crypto.randomBytes(32).toString("base64url"),
-    email_confirm: true,
-    app_metadata: {
-      role: "system",
-      status: "active",
-    },
   });
   if (error) {
     throw error;
   }
 
-  if (!data.user) {
-    throw new Error("Supabase storage system user was not created.");
+  const bootstrapAdmin = data.users.find(
+    (user) => user.email?.trim().toLowerCase() === config.bootstrapAdminEmail?.trim().toLowerCase(),
+  );
+
+  const appMetadata = { role: "admin", status: "active" };
+  const userMetadata = { name: config.bootstrapAdminName };
+
+  if (bootstrapAdmin) {
+    const { error: updateError } = await supabaseClient.auth.admin.updateUserById(
+      bootstrapAdmin.id,
+      {
+        app_metadata: {
+          ...bootstrapAdmin.app_metadata,
+          ...appMetadata,
+        },
+        user_metadata: {
+          ...bootstrapAdmin.user_metadata,
+          ...userMetadata,
+        },
+      },
+    );
+    if (updateError) {
+      throw updateError;
+    }
+
+    return bootstrapAdmin.id;
   }
 
-  return data.user.id;
+  const { data: created, error: createError } = await supabaseClient.auth.admin.createUser({
+    email: config.bootstrapAdminEmail,
+    password: config.bootstrapAdminPassword,
+    email_confirm: true,
+    app_metadata: appMetadata,
+    user_metadata: userMetadata,
+  });
+  if (createError) {
+    throw createError;
+  }
+  if (!created.user) {
+    throw new Error("Supabase bootstrap admin creation returned no user.");
+  }
+
+  return created.user.id;
 }
 
 export async function createApp(overrides: ConfigOverrides = {}): Promise<AppInstance> {
@@ -203,7 +231,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     : null;
 
   if (supabaseClient) {
-    const userId = await ensureSupabaseStorageUser(supabaseClient);
+    const userId = await resolveSupabaseStorageUserId(supabaseClient, config);
     Object.assign(repositories, {
       accountRepository: new SupabaseAccountConfigRepository(supabaseClient, userId),
       jobRepository: new SupabaseJobRepository(supabaseClient, userId),

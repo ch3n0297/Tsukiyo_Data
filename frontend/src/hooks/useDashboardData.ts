@@ -6,6 +6,8 @@ interface UseDashboardDataOptions {
   enabled?: boolean;
 }
 
+export const DASHBOARD_REFRESH_EVENT = "tsukiyo:dashboard-refresh";
+
 export function useDashboardData({ enabled }: UseDashboardDataOptions = {}) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -86,6 +88,21 @@ export function useDashboardData({ enabled }: UseDashboardDataOptions = {}) {
 
     return () => {
       abortControllerRef.current?.abort();
+    };
+  }, [enabled, refreshDashboard]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return undefined;
+    }
+
+    const handleExternalRefresh = () => {
+      void refreshDashboard({ silent: true });
+    };
+
+    window.addEventListener(DASHBOARD_REFRESH_EVENT, handleExternalRefresh);
+    return () => {
+      window.removeEventListener(DASHBOARD_REFRESH_EVENT, handleExternalRefresh);
     };
   }, [enabled, refreshDashboard]);
 
