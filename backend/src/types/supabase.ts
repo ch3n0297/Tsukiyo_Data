@@ -262,7 +262,10 @@ export type Database = {
           account_config_id: string
           current_job_id: string | null
           id: string
+          last_request_at: string | null
           last_success_at: string | null
+          output_rows: Json | null
+          output_synced_at: string | null
           refresh_status: string | null
           system_message: string | null
           updated_at: string | null
@@ -272,7 +275,10 @@ export type Database = {
           account_config_id: string
           current_job_id?: string | null
           id?: string
+          last_request_at?: string | null
           last_success_at?: string | null
+          output_rows?: Json | null
+          output_synced_at?: string | null
           refresh_status?: string | null
           system_message?: string | null
           updated_at?: string | null
@@ -282,7 +288,10 @@ export type Database = {
           account_config_id?: string
           current_job_id?: string | null
           id?: string
+          last_request_at?: string | null
           last_success_at?: string | null
+          output_rows?: Json | null
+          output_synced_at?: string | null
           refresh_status?: string | null
           system_message?: string | null
           updated_at?: string | null

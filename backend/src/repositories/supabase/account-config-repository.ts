@@ -1,9 +1,10 @@
 import type { SupabaseClient } from '../../lib/supabase-client.ts';
 import type { AccountConfig } from '../../types/account-config.ts';
 
-// 從 Supabase DB row 轉換為 AccountConfig，status 欄位填入預設值
-// （status 欄位實際由 sheet_snapshots 管理，Phase 3+ 後合併）
-function mapRow(row: Record<string, unknown>): AccountConfig {
+function mapRow(
+  row: Record<string, unknown>,
+  statusRow: Record<string, unknown> | undefined,
+): AccountConfig {
   return {
     id: row.id as string,
     clientName: row.client_name as string,
@@ -13,12 +14,16 @@ function mapRow(row: Record<string, unknown>): AccountConfig {
     sheetId: (row.sheet_id as string) ?? '',
     sheetRowKey: (row.sheet_tab as string) ?? '',
     isActive: true,
-    lastRequestTime: null,
-    lastSuccessTime: null,
-    currentJobId: null,
-    refreshStatus: 'idle',
-    systemMessage: '',
-    updatedAt: (row.updated_at as string) ?? (row.created_at as string) ?? '',
+    lastRequestTime: (statusRow?.last_request_at as string | null) ?? null,
+    lastSuccessTime: (statusRow?.last_success_at as string | null) ?? null,
+    currentJobId: (statusRow?.current_job_id as string | null) ?? null,
+    refreshStatus: (statusRow?.refresh_status as AccountConfig['refreshStatus']) ?? 'idle',
+    systemMessage: (statusRow?.system_message as string) ?? '',
+    updatedAt:
+      (statusRow?.updated_at as string) ??
+      (row.updated_at as string) ??
+      (row.created_at as string) ??
+      '',
   };
 }
 
@@ -37,7 +42,28 @@ export class SupabaseAccountConfigRepository {
       .select('*')
       .eq('user_id', this.userId);
     if (error) throw error;
-    return (data ?? []).map((row) => mapRow(row as Record<string, unknown>));
+
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    if (rows.length === 0) {
+      return [];
+    }
+
+    const accountIds = rows.map((row) => row.id as string);
+    const { data: snapshots, error: snapshotError } = await this.client
+      .from('sheet_snapshots')
+      .select('*')
+      .eq('user_id', this.userId)
+      .in('account_config_id', accountIds);
+    if (snapshotError) throw snapshotError;
+
+    const snapshotsByAccountId = new Map(
+      ((snapshots ?? []) as Array<Record<string, unknown>>).map((snapshot) => [
+        snapshot.account_config_id as string,
+        snapshot,
+      ]),
+    );
+
+    return rows.map((row) => mapRow(row, snapshotsByAccountId.get(row.id as string)));
   }
 
   async listActive(): Promise<AccountConfig[]> {
@@ -91,7 +117,22 @@ export class SupabaseAccountConfigRepository {
       .eq('account_id', accountId)
       .maybeSingle();
     if (error) throw error;
-    return data ? mapRow(data as Record<string, unknown>) : undefined;
+    if (!data) {
+      return undefined;
+    }
+
+    const { data: snapshot, error: snapshotError } = await this.client
+      .from('sheet_snapshots')
+      .select('*')
+      .eq('user_id', this.userId)
+      .eq('account_config_id', (data as Record<string, unknown>).id as string)
+      .maybeSingle();
+    if (snapshotError) throw snapshotError;
+
+    return mapRow(
+      data as Record<string, unknown>,
+      snapshot as Record<string, unknown> | undefined,
+    );
   }
 
   async updateByAccountKey(

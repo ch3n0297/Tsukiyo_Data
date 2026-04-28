@@ -113,6 +113,8 @@ export class SupabaseJobRepository {
     if (patch.systemMessage !== undefined) dbPatch.system_message = patch.systemMessage || null;
     if (patch.startedAt !== undefined) dbPatch.started_at = patch.startedAt;
     if (patch.finishedAt !== undefined) dbPatch.completed_at = patch.finishedAt;
+    if (patch.errorCode !== undefined) dbPatch.error_code = patch.errorCode;
+    if (patch.resultSummary !== undefined) dbPatch.result_summary = patch.resultSummary;
 
     if (Object.keys(dbPatch).length > 0) {
       const { error } = await this.client

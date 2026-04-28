@@ -6,6 +6,7 @@ import {
   validateRegisterPayload,
   validateResetPasswordPayload,
 } from "../services/user-auth-validation-service.ts";
+import { requireRouteAdminUser, requireRouteUser } from "./route-auth.ts";
 import type { RouteContext, RouteContextWithParams } from "../types/route.ts";
 
 export async function handleRegisterRoute({ req, res, services, config }: RouteContext): Promise<void> {
@@ -61,8 +62,10 @@ export async function handleLogoutRoute({ req, res, services }: RouteContext): P
 
 export async function handleCurrentUserRoute({ req, res, services }: RouteContext): Promise<void> {
   try {
-    const context = await services.userAuthService.requireAuthenticatedUser(req);
-    setResponseCookie(res, services.userAuthService.createSessionCookie(context.session.id));
+    const context = await requireRouteUser({ req, services });
+    if (context.sessionCookie) {
+      setResponseCookie(res, context.sessionCookie);
+    }
     sendJson(res, 200, {
       user: context.user,
     });
@@ -116,8 +119,10 @@ export async function handleResetPasswordRoute({ req, res, services, config }: R
 
 export async function handlePendingUsersRoute({ req, res, services }: RouteContext): Promise<void> {
   try {
-    const context = await services.userAuthService.requireAdminUser(req);
-    setResponseCookie(res, services.userAuthService.createSessionCookie(context.session.id));
+    const context = await requireRouteAdminUser({ req, services });
+    if (context.sessionCookie) {
+      setResponseCookie(res, context.sessionCookie);
+    }
     const users = await services.userApprovalService.listPendingUsers();
     sendJson(res, 200, {
       users,
@@ -130,8 +135,10 @@ export async function handlePendingUsersRoute({ req, res, services }: RouteConte
 
 export async function handleApproveUserRoute({ req, res, services, params }: RouteContextWithParams): Promise<void> {
   try {
-    const context = await services.userAuthService.requireAdminUser(req);
-    setResponseCookie(res, services.userAuthService.createSessionCookie(context.session.id));
+    const context = await requireRouteAdminUser({ req, services });
+    if (context.sessionCookie) {
+      setResponseCookie(res, context.sessionCookie);
+    }
     const user = await services.userApprovalService.approveUser({
       targetUserId: params.userId,
       adminUser: context.user,
@@ -149,8 +156,10 @@ export async function handleApproveUserRoute({ req, res, services, params }: Rou
 
 export async function handleRejectUserRoute({ req, res, services, params }: RouteContextWithParams): Promise<void> {
   try {
-    const context = await services.userAuthService.requireAdminUser(req);
-    setResponseCookie(res, services.userAuthService.createSessionCookie(context.session.id));
+    const context = await requireRouteAdminUser({ req, services });
+    if (context.sessionCookie) {
+      setResponseCookie(res, context.sessionCookie);
+    }
     const user = await services.userApprovalService.rejectUser({
       targetUserId: params.userId,
       adminUser: context.user,

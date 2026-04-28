@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import fastifyCors from "@fastify/cors";
@@ -8,6 +9,7 @@ import { createPlatformRegistry } from "./adapters/platforms/platform-registry.t
 import { toErrorResponse } from "./lib/errors.ts";
 import { FileStore } from "./lib/fs-store.ts";
 import { createSupabaseClient } from "./lib/supabase-client.ts";
+import type { SupabaseClient } from "./lib/supabase-client.ts";
 import { sendJson } from "./lib/http.ts";
 import { AccountConfigRepository } from "./repositories/account-config-repository.ts";
 import { JobRepository } from "./repositories/job-repository.ts";
@@ -126,7 +128,43 @@ function createCorsOriginResolver(config: AppConfig) {
   };
 }
 
-const MIGRATION_SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000001';
+const SUPABASE_STORAGE_USER_EMAIL = "migration-system@datatsukiyo.local";
+
+async function ensureSupabaseStorageUser(supabaseClient: SupabaseClient): Promise<string> {
+  const { data: usersData, error: listError } = await supabaseClient.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
+  if (listError) {
+    throw listError;
+  }
+
+  const existingUser = usersData.users.find(
+    (user) => user.email?.toLowerCase() === SUPABASE_STORAGE_USER_EMAIL,
+  );
+  if (existingUser) {
+    return existingUser.id;
+  }
+
+  const { data, error } = await supabaseClient.auth.admin.createUser({
+    email: SUPABASE_STORAGE_USER_EMAIL,
+    password: crypto.randomBytes(32).toString("base64url"),
+    email_confirm: true,
+    app_metadata: {
+      role: "system",
+      status: "active",
+    },
+  });
+  if (error) {
+    throw error;
+  }
+
+  if (!data.user) {
+    throw new Error("Supabase storage system user was not created.");
+  }
+
+  return data.user.id;
+}
 
 export async function createApp(overrides: ConfigOverrides = {}): Promise<AppInstance> {
   const config = loadConfig(overrides);
@@ -165,7 +203,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     : null;
 
   if (supabaseClient) {
-    const userId = MIGRATION_SYSTEM_USER_ID;
+    const userId = await ensureSupabaseStorageUser(supabaseClient);
     Object.assign(repositories, {
       accountRepository: new SupabaseAccountConfigRepository(supabaseClient, userId),
       jobRepository: new SupabaseJobRepository(supabaseClient, userId),
@@ -239,6 +277,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
   const userApprovalService = new UserApprovalService({
     userRepository: repositories.userRepository,
     outboxMessageRepository: repositories.outboxMessageRepository,
+    supabaseClient,
     clock: config.clock,
   });
   const passwordResetService = new PasswordResetService({
@@ -348,7 +387,9 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     await handleLogoutRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.get("/api/v1/auth/me", async (request, reply) => {
+  fastify.get("/api/v1/auth/me", {
+    preHandler: requireAuth ?? undefined,
+  }, async (request, reply) => {
     await handleCurrentUserRoute({ req: request, res: reply, services, config });
   });
 

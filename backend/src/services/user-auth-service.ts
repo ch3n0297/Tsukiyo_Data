@@ -97,7 +97,17 @@ export class UserAuthService {
       config.sessionRefreshThresholdMs ?? Math.floor(config.sessionTtlMs / 2);
   }
 
-  async register({ displayName, email, password }: { displayName: string; email: string; password: string }): Promise<PublicUser | null> {
+  async register({
+    displayName,
+    email,
+    externalUserId,
+    password,
+  }: {
+    displayName: string;
+    email: string;
+    externalUserId?: string;
+    password: string;
+  }): Promise<PublicUser | null> {
     const normalizedEmail = normalizeEmailAddress(email);
     const existingUser = await this.userRepository.findByEmail(normalizedEmail);
 
@@ -111,7 +121,7 @@ export class UserAuthService {
 
     const now = this.clock().toISOString();
     const user: User = {
-      id: crypto.randomUUID(),
+      id: externalUserId ?? crypto.randomUUID(),
       email: normalizedEmail,
       displayName,
       passwordHash: await hashPassword(password),
