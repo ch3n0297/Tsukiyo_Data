@@ -1,6 +1,7 @@
 import { HttpError } from "../lib/errors.ts";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MIN_PASSWORD_LENGTH = 12;
 const MAX_PASSWORD_LENGTH = 256;
 
@@ -64,6 +65,7 @@ export interface RegisterPayload {
   displayName: string;
   email: string;
   password: string;
+  externalUserId?: string;
 }
 
 export interface LoginPayload {
@@ -89,8 +91,21 @@ export function validateRegisterPayload(payload: unknown): RegisterPayload {
   const displayName = requireString(p.display_name, "display_name");
   const email = validateEmail(p.email);
   const password = validatePassword(p.password);
+  const externalUserId = p.external_user_id;
 
-  return { displayName, email, password };
+  if (externalUserId !== undefined && (
+    typeof externalUserId !== "string" ||
+    !UUID_PATTERN.test(externalUserId)
+  )) {
+    throw new HttpError(400, "VALIDATION_ERROR", "external_user_id 格式不正確。");
+  }
+
+  return {
+    displayName,
+    email,
+    password,
+    externalUserId: typeof externalUserId === "string" ? externalUserId : undefined,
+  };
 }
 
 export function validateLoginPayload(payload: unknown): LoginPayload {

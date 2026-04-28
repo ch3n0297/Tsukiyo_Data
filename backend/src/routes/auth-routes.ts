@@ -1,6 +1,6 @@
 import { toErrorResponse } from "../lib/errors.ts";
 import { getRequestOrigin, readJsonRequest, sendJson, setResponseCookie } from "../lib/http.ts";
-import { refreshLegacySessionCookie, requireRouteAdmin } from "./route-auth.ts";
+import { refreshLegacySessionCookie, requireRouteAdmin, requireRouteUser } from "./route-auth.ts";
 import {
   validateForgotPasswordPayload,
   validateLoginPayload,
@@ -62,8 +62,8 @@ export async function handleLogoutRoute({ req, res, services }: RouteContext): P
 
 export async function handleCurrentUserRoute({ req, res, services }: RouteContext): Promise<void> {
   try {
-    const context = await services.userAuthService.requireAuthenticatedUser(req);
-    setResponseCookie(res, services.userAuthService.createSessionCookie(context.session.id));
+    const context = await requireRouteUser(req, services);
+    refreshLegacySessionCookie(res, services, context);
     sendJson(res, 200, {
       user: context.user,
     });

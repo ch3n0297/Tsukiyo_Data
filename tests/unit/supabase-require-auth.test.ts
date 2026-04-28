@@ -24,7 +24,7 @@ function createRequest(): FastifyRequest {
   } as FastifyRequest;
 }
 
-test("Supabase auth rejects pending users before protected handlers run", async () => {
+test("Supabase auth attaches pending users for route-level authorization", async () => {
   const requireAuth = createRequireAuth(
     createMockSupabase({
       id: "user-pending",
@@ -33,14 +33,12 @@ test("Supabase auth rejects pending users before protected handlers run", async 
       app_metadata: {},
     }),
   );
+  const request = createRequest();
 
-  await assert.rejects(
-    () => requireAuth(createRequest(), {} as FastifyReply),
-    (error) =>
-      error instanceof HttpError &&
-      error.statusCode === 403 &&
-      error.code === "USER_PENDING",
-  );
+  await requireAuth(request, {} as FastifyReply);
+
+  assert.equal(request.user?.id, "user-pending");
+  assert.equal(request.user?.status, "pending");
 });
 
 test("Supabase admin guard accepts active admins and rejects active members", async () => {

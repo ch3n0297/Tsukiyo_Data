@@ -10,6 +10,9 @@ function createQuery(data: unknown[]) {
     eq() {
       return query;
     },
+    not() {
+      return query;
+    },
     order() {
       return query;
     },
@@ -32,6 +35,10 @@ test("SupabaseSheetSnapshotRepository builds output snapshots from normalized re
             sheet_tab: "row-1",
           },
         ]);
+      }
+
+      if (table === "sheet_snapshots") {
+        return createQuery([]);
       }
 
       if (table === "normalized_records") {

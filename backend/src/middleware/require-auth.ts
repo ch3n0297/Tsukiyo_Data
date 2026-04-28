@@ -28,14 +28,13 @@ function mapSupabaseUser(user: {
   email?: string;
   user_metadata?: Record<string, unknown>;
   app_metadata?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string | null;
 }): AuthUser {
   const displayName = readMetadataValue(user.user_metadata, 'name') ?? user.email ?? '';
-  const role = (readMetadataValue(user.app_metadata, 'role') ?? 'member') as UserRole;
-  const status = (
-    readMetadataValue(user.app_metadata, 'status') ??
-    readMetadataValue(user.user_metadata, 'status') ??
-    'pending'
-  ) as UserStatus;
+  const role = readRole(readMetadataValue(user.app_metadata, 'role'));
+  const status = readStatus(readMetadataValue(user.app_metadata, 'status'));
+  const createdAt = user.created_at ?? '';
 
   return {
     id: user.id,
@@ -46,9 +45,31 @@ function mapSupabaseUser(user: {
     approvedAt: null,
     approvedBy: null,
     lastLoginAt: null,
-    createdAt: '',
-    updatedAt: '',
+    createdAt,
+    updatedAt: user.updated_at ?? createdAt,
   };
+}
+
+function readRole(value: unknown): UserRole {
+  return value === 'admin' || value === 'member' ? value : 'member';
+}
+
+function readStatus(value: unknown): UserStatus {
+  return value === 'active' || value === 'rejected' || value === 'pending'
+    ? value
+    : 'pending';
+}
+
+function statusError(status: UserStatus): HttpError {
+  if (status === 'pending') {
+    return new HttpError(403, 'USER_PENDING', '帳號尚待管理員核准，暫時無法使用。');
+  }
+
+  if (status === 'rejected') {
+    return new HttpError(403, 'USER_REJECTED', '此帳號註冊申請已被拒絕，請聯絡管理員。');
+  }
+
+  return new HttpError(403, 'USER_DISABLED', '此帳號目前已停用，請聯絡管理員。');
 }
 
 export function createRequireAuth(
@@ -69,8 +90,10 @@ export function createRequireAuth(
     }
 
     const authUser = mapSupabaseUser(user);
-    if (authUser.status !== 'active') {
-      throw new HttpError(403, 'USER_PENDING', '帳號尚待管理員核准，暫時無法使用。');
+    // Route helpers resolve the server-side approval record before enforcing status.
+    // The optional admin guard is retained for callers that intentionally trust JWT app_metadata.
+    if (requireAdmin && authUser.status !== 'active') {
+      throw statusError(authUser.status);
     }
     if (requireAdmin && authUser.role !== 'admin') {
       throw new HttpError(403, 'ADMIN_REQUIRED', '此功能需要管理員權限。');

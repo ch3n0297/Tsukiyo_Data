@@ -305,6 +305,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
   const userApprovalService = new UserApprovalService({
     userRepository: repositories.userRepository,
     outboxMessageRepository: repositories.outboxMessageRepository,
+    supabaseClient,
     clock: config.clock,
   });
   const passwordResetService = new PasswordResetService({
@@ -379,9 +380,6 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
   });
 
   const requireAuth = supabaseClient ? createRequireAuth(supabaseClient) : null;
-  const requireAdmin = supabaseClient
-    ? createRequireAuth(supabaseClient, { requireAdmin: true })
-    : null;
 
   fastify.get("/health", async (request, reply) => {
     handleHealthRoute({ req: request, res: reply, services, config });
@@ -417,7 +415,9 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     await handleLogoutRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.get("/api/v1/auth/me", async (request, reply) => {
+  fastify.get("/api/v1/auth/me", {
+    preHandler: requireAuth ?? undefined,
+  }, async (request, reply) => {
     await handleCurrentUserRoute({ req: request, res: reply, services, config });
   });
 
@@ -430,13 +430,13 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
   });
 
   fastify.get("/api/v1/admin/pending-users", {
-    preHandler: requireAdmin ?? undefined,
+    preHandler: requireAuth ?? undefined,
   }, async (request, reply) => {
     await handlePendingUsersRoute({ req: request, res: reply, services, config });
   });
 
   fastify.post("/api/v1/admin/pending-users/:userId/approve", {
-    preHandler: requireAdmin ?? undefined,
+    preHandler: requireAuth ?? undefined,
   }, async (request, reply) => {
     await handleApproveUserRoute({
       req: request,
@@ -448,7 +448,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
   });
 
   fastify.post("/api/v1/admin/pending-users/:userId/reject", {
-    preHandler: requireAdmin ?? undefined,
+    preHandler: requireAuth ?? undefined,
   }, async (request, reply) => {
     await handleRejectUserRoute({
       req: request,

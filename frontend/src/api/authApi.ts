@@ -19,7 +19,7 @@ function mapSupabaseUser(user: {
     email: user.email ?? '',
     displayName: (meta.name as string) ?? (user.email ?? ''),
     role: (appMeta.role as PublicUser['role']) ?? 'member',
-    status: (appMeta.status as PublicUser['status']) ?? (meta.status as PublicUser['status']) ?? 'pending',
+    status: (appMeta.status as PublicUser['status']) ?? 'pending',
     approvedAt: null,
     approvedBy: null,
     lastLoginAt: null,
@@ -36,11 +36,15 @@ function requireSupabase() {
 export async function signInWithSupabase(email: string, password: string): Promise<PublicUser> {
   const { data, error } = await requireSupabase().auth.signInWithPassword({ email, password });
   if (error) throw new Error(error.message);
-  const user = mapSupabaseUser(data.user);
-  if (user.status !== 'active') {
-    throw new Error('帳號尚待管理員核准，暫時無法登入。');
+  if (!data.user) throw new Error('Supabase 未回傳使用者資料。');
+
+  try {
+    const payload = await getCurrentUser() as { user?: PublicUser };
+    return payload.user ?? mapSupabaseUser(data.user);
+  } catch (serverError) {
+    await signOutWithSupabase().catch(() => undefined);
+    throw serverError;
   }
-  return user;
 }
 
 export async function signOutWithSupabase(): Promise<void> {
@@ -53,13 +57,30 @@ export async function signUpWithSupabase(
   password: string,
   displayName: string,
 ): Promise<{ status: string }> {
-  const { error } = await requireSupabase().auth.signUp({
+  const { data, error } = await requireSupabase().auth.signUp({
     email,
     password,
     // role/status 不放 user_metadata（用戶可自行更新），由後端/service-role 設定 app_metadata
-    options: { data: { name: displayName, status: 'pending' } },
+    options: { data: { name: displayName } },
   });
   if (error) throw new Error(error.message);
+
+  if (!data.user?.id) {
+    throw new Error('Supabase 未回傳使用者識別碼。');
+  }
+
+  try {
+    await registerUser({
+      display_name: displayName,
+      email,
+      external_user_id: data.user.id,
+      password,
+    });
+  } catch (serverError) {
+    await signOutWithSupabase().catch(() => undefined);
+    throw serverError;
+  }
+  await signOutWithSupabase();
   return { status: 'pending' };
 }
 
@@ -82,9 +103,13 @@ export async function getSupabaseCurrentUser(): Promise<PublicUser | null> {
   if (sessionError) throw new Error(sessionError.message);
   if (!session) return null;
 
-  const { data: { user }, error } = await client.auth.getUser();
-  if (error) throw new Error(error.message);
-  return user ? mapSupabaseUser(user) : null;
+  try {
+    const payload = await getCurrentUser() as { user?: PublicUser };
+    return payload.user ?? null;
+  } catch (serverError) {
+    await signOutWithSupabase().catch(() => undefined);
+    throw serverError;
+  }
 }
 
 // === 舊版 HTTP API 函數（非 Supabase 模式保留）===
