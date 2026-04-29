@@ -10,6 +10,7 @@
     "build:frontend": "vite build --config frontend/vite.config.js",
     "preview:frontend": "vite preview --config frontend/vite.config.js",
     "seed": "node --experimental-strip-types backend/src/cli/seed-demo.ts",
+    "seed:supabase": "node --experimental-strip-types backend/src/cli/seed-supabase.ts",
     "sign": "node --experimental-strip-types backend/src/cli/sign-request.ts",
     "test:backend": "node --experimental-strip-types --test tests/integration/*.test.ts tests/unit/*.test.ts",
     "test:frontend": "vitest run --config frontend/vite.config.js",
