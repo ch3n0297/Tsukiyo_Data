@@ -51,6 +51,69 @@ test("registration creates a pending user and blocks login until approved", asyn
   }
 });
 
+test("password authentication preserves leading and trailing spaces", async () => {
+  const { cleanup, baseUrl } = await setupTestApp({
+    accounts: [createAccount({ platform: "instagram", accountId: "ig-auth-spaces-1" })],
+    fixtures: {
+      "instagram--ig-auth-spaces-1.json": { items: [] },
+    },
+  });
+
+  try {
+    const adminLogin = await loginAsAdmin(baseUrl);
+    const password = "  SpacedPassword123!  ";
+    const register = await sendJsonRequest({
+      baseUrl,
+      pathName: "/api/v1/auth/register",
+      body: {
+        display_name: "空白密碼成員",
+        email: "spaces@example.com",
+        password,
+      },
+    });
+    assert.equal(register.response.status, 201);
+
+    const pendingUsers = await fetch(`${baseUrl}/api/v1/admin/pending-users`, {
+      headers: {
+        cookie: adminLogin.cookie,
+      },
+    });
+    const pendingUsersJson = await pendingUsers.json();
+    const targetUser = pendingUsersJson.users.find((user) => user.email === "spaces@example.com");
+    assert.ok(targetUser);
+
+    const approve = await fetch(`${baseUrl}/api/v1/admin/pending-users/${targetUser.id}/approve`, {
+      method: "POST",
+      headers: {
+        cookie: adminLogin.cookie,
+      },
+    });
+    assert.equal(approve.status, 200);
+
+    const trimmedLogin = await sendJsonRequest({
+      baseUrl,
+      pathName: "/api/v1/auth/login",
+      body: {
+        email: "spaces@example.com",
+        password: password.trim(),
+      },
+    });
+    assert.equal(trimmedLogin.response.status, 401);
+
+    const exactLogin = await sendJsonRequest({
+      baseUrl,
+      pathName: "/api/v1/auth/login",
+      body: {
+        email: "spaces@example.com",
+        password,
+      },
+    });
+    assert.equal(exactLogin.response.status, 200);
+  } finally {
+    await cleanup();
+  }
+});
+
 test("authenticated sessions protect UI APIs and can be logged out", async () => {
   const { cleanup, baseUrl } = await setupTestApp({
     accounts: [createAccount({ platform: "instagram", accountId: "ig-auth-ui-1" })],

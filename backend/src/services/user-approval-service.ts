@@ -1,28 +1,27 @@
 import crypto from "node:crypto";
 import { HttpError } from "../lib/errors.ts";
 import { sanitizeUser } from "./user-auth-service.ts";
-import type { UserRepository } from "../repositories/user-repository.ts";
-import type { OutboxMessageRepository } from "../repositories/outbox-message-repository.ts";
+import type { UserApprovalRepository } from "../repositories/user-approval-repository.ts";
 import type { SupabaseClient } from "../lib/supabase-client.ts";
 import type { PublicUser, User, UserStatus } from "../types/user.ts";
 import type { OutboxMessage } from "../types/outbox.ts";
 
 interface OutboxMessageParams {
-  clock: () => Date;
+  createdAt: string;
   to: string;
   type: string;
   subject: string;
   body: string;
 }
 
-function buildOutboxMessage({ clock, to, type, subject, body }: OutboxMessageParams): OutboxMessage {
+function buildOutboxMessage({ createdAt, to, type, subject, body }: OutboxMessageParams): OutboxMessage {
   return {
     id: crypto.randomUUID(),
     type: type as OutboxMessage["type"],
     to,
     subject,
     body,
-    createdAt: clock().toISOString(),
+    createdAt,
   };
 }
 
@@ -36,32 +35,28 @@ interface DecideUserParams {
 }
 
 interface UserApprovalServiceOptions {
-  userRepository: UserRepository;
-  outboxMessageRepository: OutboxMessageRepository;
+  userApprovalRepository: UserApprovalRepository;
   supabaseClient?: SupabaseClient | null;
   clock: () => Date;
 }
 
 export class UserApprovalService {
-  readonly userRepository: UserRepository;
-  readonly outboxMessageRepository: OutboxMessageRepository;
+  readonly userApprovalRepository: UserApprovalRepository;
   readonly supabaseClient: SupabaseClient | null;
   readonly clock: () => Date;
 
   constructor({
-    userRepository,
-    outboxMessageRepository,
+    userApprovalRepository,
     supabaseClient = null,
     clock,
   }: UserApprovalServiceOptions) {
-    this.userRepository = userRepository;
-    this.outboxMessageRepository = outboxMessageRepository;
+    this.userApprovalRepository = userApprovalRepository;
     this.supabaseClient = supabaseClient;
     this.clock = clock;
   }
 
   async listPendingUsers(): Promise<PublicUser[]> {
-    const users = await this.userRepository.listByStatus("pending");
+    const users = await this.userApprovalRepository.listPendingUsers();
     return users.map((user) => sanitizeUser(user)).filter((u): u is PublicUser => u !== null);
   }
 
@@ -113,7 +108,7 @@ export class UserApprovalService {
     invalidStatusMessage,
     outboxMessage,
   }: DecideUserParams): Promise<User | null> {
-    const user = await this.userRepository.findById(targetUserId);
+    const user = await this.userApprovalRepository.findById(targetUserId);
     if (!user) {
       throw new HttpError(404, "USER_NOT_FOUND", "找不到指定的使用者。");
     }
@@ -124,19 +119,20 @@ export class UserApprovalService {
     const now = this.clock().toISOString();
     await this.#syncSupabaseAuthMetadata(user, nextStatus);
 
-    const updatedUser = await this.userRepository.updateById(targetUserId, {
-      status: nextStatus,
-      ...buildNextFields(now),
-      updatedAt: now,
-    });
-
-    await this.outboxMessageRepository.create(
-      buildOutboxMessage({
-        clock: this.clock,
+    const updatedUser = await this.userApprovalRepository.decidePendingUser({
+      targetUserId,
+      nextStatus,
+      nextFields: {
+        ...buildNextFields(now),
+        updatedAt: now,
+      },
+      invalidStatusMessage,
+      outboxMessage: buildOutboxMessage({
+        createdAt: now,
         to: user.email,
         ...outboxMessage,
       }),
-    );
+    });
 
     return updatedUser;
   }

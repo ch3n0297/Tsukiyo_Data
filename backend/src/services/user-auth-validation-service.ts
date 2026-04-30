@@ -13,6 +13,14 @@ function requireString(value: unknown, fieldName: string): string {
   return value.trim();
 }
 
+function requirePasswordString(value: unknown, fieldName: string): string {
+  if (typeof value !== "string" || value === "") {
+    throw new HttpError(400, "VALIDATION_ERROR", `欄位 ${fieldName} 為必填。`);
+  }
+
+  return value;
+}
+
 export function normalizeEmailAddress(email: unknown): string {
   return requireString(email, "email").toLowerCase();
 }
@@ -48,7 +56,7 @@ export function validatePassword(password: unknown, fieldName = "password"): str
 }
 
 function validatePasswordForAuthentication(password: unknown, fieldName = "password"): string {
-  const normalizedPassword = requireString(password, fieldName);
+  const normalizedPassword = requirePasswordString(password, fieldName);
 
   if (normalizedPassword.length > MAX_PASSWORD_LENGTH) {
     throw new HttpError(

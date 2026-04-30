@@ -18,6 +18,7 @@ import { RawRecordRepository } from "./repositories/raw-record-repository.ts";
 import { SessionRepository } from "./repositories/session-repository.ts";
 import { SheetSnapshotRepository } from "./repositories/sheet-snapshot-repository.ts";
 import { UserRepository } from "./repositories/user-repository.ts";
+import { UserApprovalRepository } from "./repositories/user-approval-repository.ts";
 import { SupabaseAccountConfigRepository } from "./repositories/supabase/account-config-repository.ts";
 import { SupabaseJobRepository } from "./repositories/supabase/job-repository.ts";
 import { SupabaseRawRecordRepository } from "./repositories/supabase/raw-record-repository.ts";
@@ -222,6 +223,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     sessionRepository: new SessionRepository(store),
     userRepository: new UserRepository(store),
   };
+  const userApprovalRepository = new UserApprovalRepository(store);
 
   let repositories = fileStoreRepos;
 
@@ -303,8 +305,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     config,
   });
   const userApprovalService = new UserApprovalService({
-    userRepository: repositories.userRepository,
-    outboxMessageRepository: repositories.outboxMessageRepository,
+    userApprovalRepository,
     supabaseClient,
     clock: config.clock,
   });
@@ -382,7 +383,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
   const requireAuth = supabaseClient ? createRequireAuth(supabaseClient) : null;
 
   fastify.get("/health", async (request, reply) => {
-    handleHealthRoute({ req: request, res: reply, services, config });
+    await handleHealthRoute({ req: request, res: reply, services, config });
   });
 
   fastify.get("/api/v1/ui/accounts", {
