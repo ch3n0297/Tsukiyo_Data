@@ -15,7 +15,8 @@ backend/data/*.json
 
 # AI 工具 session 狀態
 .remember/
-.claude/handoff.md
+.claude/
+CLAUDE.md
 
 # 個人文件 / 二進位大型檔案
 docs/*.xlsx
