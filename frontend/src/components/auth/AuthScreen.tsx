@@ -51,7 +51,7 @@ function getDescription(mode: AuthMode): string {
   }
 
   if (mode === "forgot") {
-    return "輸入 email 後，系統會以本地 stub 信箱產出重設指示。";
+    return "輸入 email 後，系統會寄出 Supabase 密碼重設指示。";
   }
 
   if (mode === "reset") {
@@ -240,9 +240,9 @@ export function AuthScreen({
         </div>
 
         <ul className="auth-notes">
-          <li>本系統採 Email 與密碼登入，登入後以 HttpOnly Cookie 維持 session。</li>
+          <li>本系統採 Supabase Auth 管理登入與 session。</li>
           <li>新帳號註冊後會先進入待審狀態，需由管理員核准後才可登入。</li>
-          <li>忘記密碼流程目前以本地 stub 信箱輸出，方便開發與測試。</li>
+          <li>忘記密碼流程使用 Supabase Auth 重設郵件。</li>
           <li>Google Sheet 與 Apps Script 的既有簽章流程不受這套登入系統影響。</li>
         </ul>
       </section>

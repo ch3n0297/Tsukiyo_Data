@@ -49,12 +49,11 @@ test("ui read APIs expose aggregated account snapshots and latest output rows", 
     "facebook--fb-ui-1.json": { items: [] },
   };
 
-  const { app, cleanup, baseUrl } = await setupTestApp({ accounts, fixtures });
+  const { app, auth, cleanup, baseUrl } = await setupTestApp({ accounts, fixtures });
 
   try {
-    const adminLogin = await loginAsAdmin(baseUrl);
+    const adminLogin = await loginAsAdmin(baseUrl, auth);
     assert.equal(adminLogin.response.status, 200);
-    assert.ok(adminLogin.cookie);
 
     const queued = await sendSignedJson({
       baseUrl,
@@ -71,9 +70,7 @@ test("ui read APIs expose aggregated account snapshots and latest output rows", 
     await app.services.jobQueue.waitForIdle();
 
     const accountsResponse = await fetch(`${baseUrl}/api/v1/ui/accounts`, {
-      headers: {
-        cookie: adminLogin.cookie,
-      },
+      headers: adminLogin.headers,
     });
     const accountsJson = await accountsResponse.json();
 
@@ -91,9 +88,7 @@ test("ui read APIs expose aggregated account snapshots and latest output rows", 
     assert.ok(instagramAccount.latestOutput.syncedAt);
 
     const detailResponse = await fetch(`${baseUrl}/api/v1/ui/accounts/instagram/ig-ui-1`, {
-      headers: {
-        cookie: adminLogin.cookie,
-      },
+      headers: adminLogin.headers,
     });
     const detailJson = await detailResponse.json();
 
@@ -136,14 +131,14 @@ test("frontend does not bypass existing manual refresh protection", async () => 
     const accountsResponse = await fetch(`${baseUrl}/api/v1/ui/accounts`);
     const accountsJson = await accountsResponse.json();
     assert.equal(accountsResponse.status, 401);
-    assert.equal(accountsJson.error, "AUTH_REQUIRED");
+    assert.equal(accountsJson.error, "MISSING_JWT");
   } finally {
     await cleanup();
   }
 });
 
 test("admin can review pending users through protected browser APIs", async () => {
-  const { cleanup, baseUrl } = await setupTestApp({
+  const { auth, cleanup, baseUrl } = await setupTestApp({
     accounts: [createAccount({ platform: "instagram", accountId: "ig-auth-1" })],
     fixtures: {
       "instagram--ig-auth-1.json": { items: [] },
@@ -151,24 +146,27 @@ test("admin can review pending users through protected browser APIs", async () =
   });
 
   try {
+    auth.addUser({
+      id: "55555555-5555-4555-8555-555555555555",
+      email: "member@example.com",
+      displayName: "待審成員",
+      status: "pending",
+    });
     const register = await sendJsonRequest({
       baseUrl,
       pathName: "/api/v1/auth/register",
       body: {
         display_name: "待審成員",
-        email: "member@example.com",
-        password: "MemberPassword123!",
       },
+      authorization: auth.authorizationFor("55555555-5555-4555-8555-555555555555"),
     });
     assert.equal(register.response.status, 201);
 
-    const adminLogin = await loginAsAdmin(baseUrl);
+    const adminLogin = await loginAsAdmin(baseUrl, auth);
     assert.equal(adminLogin.response.status, 200);
 
     const pendingBefore = await fetch(`${baseUrl}/api/v1/admin/pending-users`, {
-      headers: {
-        cookie: adminLogin.cookie,
-      },
+      headers: adminLogin.headers,
     });
     const pendingBeforeJson = await pendingBefore.json();
     assert.equal(pendingBefore.status, 200);
@@ -178,9 +176,7 @@ test("admin can review pending users through protected browser APIs", async () =
       `${baseUrl}/api/v1/admin/pending-users/${pendingBeforeJson.users[0].id}/approve`,
       {
         method: "POST",
-        headers: {
-          cookie: adminLogin.cookie,
-        },
+        headers: adminLogin.headers,
       },
     );
     const approveJson = await approve.json();
@@ -189,11 +185,9 @@ test("admin can review pending users through protected browser APIs", async () =
 
     const memberLogin = await sendJsonRequest({
       baseUrl,
-      pathName: "/api/v1/auth/login",
-      body: {
-        email: "member@example.com",
-        password: "MemberPassword123!",
-      },
+      pathName: "/api/v1/auth/me",
+      method: "GET",
+      authorization: auth.authorizationFor("55555555-5555-4555-8555-555555555555"),
     });
     assert.equal(memberLogin.response.status, 200);
   } finally {

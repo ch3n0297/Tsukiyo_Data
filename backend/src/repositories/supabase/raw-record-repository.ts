@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { SupabaseClient } from '../../lib/supabase-client.ts';
 import type { RawRecord } from '../../types/record.ts';
 

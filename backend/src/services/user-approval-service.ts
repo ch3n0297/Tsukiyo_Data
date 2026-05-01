@@ -1,198 +1,326 @@
-import crypto from "node:crypto";
 import { HttpError } from "../lib/errors.ts";
-import { sanitizeUser } from "./user-auth-service.ts";
-import type { UserApprovalRepository } from "../repositories/user-approval-repository.ts";
 import type { SupabaseClient } from "../lib/supabase-client.ts";
-import type { PublicUser, User, UserStatus } from "../types/user.ts";
-import type { OutboxMessage } from "../types/outbox.ts";
+import type { AuthUser } from "../middleware/require-auth.ts";
+import type { AuditEventInput } from "../repositories/supabase/audit-event-repository.ts";
+import type { UserRepository } from "../repositories/user-repository.ts";
+import type { PublicUser, User, UserRole, UserStatus } from "../types/user.ts";
 
-interface OutboxMessageParams {
-  createdAt: string;
-  to: string;
-  type: string;
-  subject: string;
-  body: string;
-}
-
-function buildOutboxMessage({ createdAt, to, type, subject, body }: OutboxMessageParams): OutboxMessage {
-  return {
-    id: crypto.randomUUID(),
-    type: type as OutboxMessage["type"],
-    to,
-    subject,
-    body,
-    createdAt,
-  };
-}
-
-interface DecideUserParams {
-  targetUserId: string;
-  adminUser: PublicUser;
-  nextStatus: UserStatus;
-  buildNextFields: (now: string) => Partial<User>;
-  invalidStatusMessage: string;
-  outboxMessage: { type: string; subject: string; body: string };
+interface AuditEventRepository {
+  create(event: AuditEventInput): Promise<void>;
 }
 
 interface UserApprovalServiceOptions {
-  userApprovalRepository: UserApprovalRepository;
-  supabaseClient?: SupabaseClient | null;
+  userRepository: UserRepository;
+  auditEventRepository: AuditEventRepository;
+  supabaseClient: SupabaseClient;
   clock: () => Date;
 }
 
+function readRole(value: unknown): UserRole {
+  return value === "admin" || value === "member" ? value : "member";
+}
+
+function readStatus(value: unknown): UserStatus {
+  return value === "active" || value === "rejected" || value === "pending"
+    ? value
+    : "pending";
+}
+
+function readMetadata(user: {
+  app_metadata?: Record<string, unknown>;
+}): { role: UserRole; status: UserStatus } {
+  return {
+    role: readRole(user.app_metadata?.role),
+    status: readStatus(user.app_metadata?.status),
+  };
+}
+
+function toPublicUser(user: User): PublicUser {
+  return {
+    id: user.id,
+    email: user.email,
+    displayName: user.displayName,
+    role: user.role,
+    status: user.status,
+    approvedAt: user.approvedAt,
+    approvedBy: user.approvedBy,
+    lastLoginAt: user.lastLoginAt,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
+}
+
+function mergeProfileWithMetadata(
+  profile: User | null,
+  authUser: {
+    id: string;
+    email?: string;
+    user_metadata?: Record<string, unknown>;
+    created_at?: string;
+    updated_at?: string | null;
+    app_metadata?: Record<string, unknown>;
+  },
+): User {
+  const metadata = readMetadata(authUser);
+  const createdAt = authUser.created_at ?? profile?.createdAt ?? new Date().toISOString();
+  const displayName =
+    profile?.displayName ??
+    (typeof authUser.user_metadata?.name === "string" ? authUser.user_metadata.name : undefined) ??
+    authUser.email ??
+    "";
+
+  return {
+    id: authUser.id,
+    email: profile?.email ?? authUser.email ?? "",
+    displayName,
+    role: metadata.role,
+    status: metadata.status,
+    approvedAt: profile?.approvedAt ?? null,
+    approvedBy: profile?.approvedBy ?? null,
+    rejectedAt: profile?.rejectedAt ?? null,
+    rejectedBy: profile?.rejectedBy ?? null,
+    lastLoginAt: profile?.lastLoginAt ?? null,
+    createdAt,
+    updatedAt: profile?.updatedAt ?? authUser.updated_at ?? createdAt,
+  };
+}
+
+function statusError(status: UserStatus): HttpError {
+  if (status === "pending") {
+    return new HttpError(403, "USER_PENDING", "帳號尚待管理員核准，暫時無法使用。");
+  }
+  if (status === "rejected") {
+    return new HttpError(403, "USER_REJECTED", "此帳號註冊申請已被拒絕，請聯絡管理員。");
+  }
+  return new HttpError(403, "USER_DISABLED", "此帳號目前已停用，請聯絡管理員。");
+}
+
 export class UserApprovalService {
-  readonly userApprovalRepository: UserApprovalRepository;
-  readonly supabaseClient: SupabaseClient | null;
-  readonly clock: () => Date;
+  readonly #userRepository: UserRepository;
+  readonly #auditEventRepository: AuditEventRepository;
+  readonly #supabaseClient: SupabaseClient;
+  readonly #clock: () => Date;
 
   constructor({
-    userApprovalRepository,
-    supabaseClient = null,
+    userRepository,
+    auditEventRepository,
+    supabaseClient,
     clock,
   }: UserApprovalServiceOptions) {
-    this.userApprovalRepository = userApprovalRepository;
-    this.supabaseClient = supabaseClient;
-    this.clock = clock;
+    this.#userRepository = userRepository;
+    this.#auditEventRepository = auditEventRepository;
+    this.#supabaseClient = supabaseClient;
+    this.#clock = clock;
+  }
+
+  async syncSignup({
+    authUser,
+    displayName,
+  }: {
+    authUser: AuthUser;
+    displayName?: string;
+  }): Promise<PublicUser> {
+    const { data, error } = await this.#supabaseClient.auth.admin.getUserById(authUser.id);
+    if (error || !data.user) {
+      throw new HttpError(502, "SUPABASE_AUTH_ERROR", error?.message ?? "找不到 Supabase Auth 使用者。");
+    }
+    const existingMetadata = readMetadata(data.user);
+    if (existingMetadata.role !== "member" || existingMetadata.status !== "pending") {
+      throw new HttpError(
+        409,
+        "USER_STATUS_INVALID",
+        "只有新註冊或待審核帳號可以同步註冊狀態。",
+      );
+    }
+
+    const now = this.#clock().toISOString();
+    const resolvedDisplayName = displayName?.trim() || authUser.displayName || authUser.email;
+    await this.#updateAppMetadata(authUser.id, { role: "member", status: "pending" });
+    const profile = await this.#userRepository.upsertSignupUser({
+      userId: authUser.id,
+      email: authUser.email,
+      displayName: resolvedDisplayName,
+      createdAt: authUser.createdAt || now,
+      updatedAt: now,
+    });
+    const user: User = {
+      ...profile,
+      role: "member",
+      status: "pending",
+    };
+    await this.#auditEventRepository.create({
+      userId: user.id,
+      actorUserId: user.id,
+      actorType: "user",
+      eventType: "auth.signup_synced",
+      entityType: "profile",
+      entityId: user.id,
+    });
+    return toPublicUser(user);
+  }
+
+  async getCurrentUser(authUser: AuthUser): Promise<PublicUser> {
+    const profile = await this.#userRepository.findById(authUser.id);
+    const user: User = {
+      ...(profile ?? {
+        id: authUser.id,
+        email: authUser.email,
+        displayName: authUser.displayName,
+        approvedAt: null,
+        approvedBy: null,
+        rejectedAt: null,
+        rejectedBy: null,
+        lastLoginAt: null,
+        createdAt: authUser.createdAt,
+        updatedAt: authUser.updatedAt,
+      }),
+      role: authUser.role,
+      status: authUser.status,
+    };
+    if (user.status !== "active") {
+      throw statusError(user.status);
+    }
+    return toPublicUser(user);
   }
 
   async listPendingUsers(): Promise<PublicUser[]> {
-    const users = await this.userApprovalRepository.listPendingUsers();
-    return users.map((user) => sanitizeUser(user)).filter((u): u is PublicUser => u !== null);
+    const { data, error } = await this.#supabaseClient.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000,
+    });
+    if (error) {
+      throw new HttpError(502, "SUPABASE_AUTH_ERROR", error.message);
+    }
+
+    const users: PublicUser[] = [];
+    for (const authUser of data.users) {
+      const metadata = readMetadata(authUser);
+      if (metadata.status !== "pending") {
+        continue;
+      }
+      const profile = await this.#userRepository.findById(authUser.id);
+      users.push(toPublicUser(mergeProfileWithMetadata(profile, authUser)));
+    }
+
+    return users;
   }
 
-  async approveUser({ targetUserId, adminUser }: { targetUserId: string; adminUser: PublicUser }): Promise<PublicUser | null> {
-    const updatedUser = await this.#decideUser({
+  async approveUser({
+    targetUserId,
+    adminUser,
+  }: {
+    targetUserId: string;
+    adminUser: PublicUser;
+  }): Promise<PublicUser> {
+    return this.#decideUser({
       targetUserId,
       adminUser,
       nextStatus: "active",
-      buildNextFields: (now) => ({
-        approvedAt: now,
-        approvedBy: adminUser.id,
-        rejectedAt: null,
-        rejectedBy: null,
-      }),
+      eventType: "auth.user_approved",
+      persistDecision: (now) =>
+        this.#userRepository.recordApproval({
+          targetUserId,
+          adminUser,
+          approvedAt: now,
+        }),
       invalidStatusMessage: "只有待審核帳號可以被核准。",
-      outboxMessage: {
-        type: "user-approved",
-        subject: "社群資料中台帳號已核准",
-        body: "你的帳號已由管理員核准，現在可以登入社群資料中台。",
-      },
     });
-    return sanitizeUser(updatedUser);
   }
 
-  async rejectUser({ targetUserId, adminUser }: { targetUserId: string; adminUser: PublicUser }): Promise<PublicUser | null> {
-    const updatedUser = await this.#decideUser({
+  async rejectUser({
+    targetUserId,
+    adminUser,
+  }: {
+    targetUserId: string;
+    adminUser: PublicUser;
+  }): Promise<PublicUser> {
+    return this.#decideUser({
       targetUserId,
       adminUser,
       nextStatus: "rejected",
-      buildNextFields: (now) => ({
-        rejectedAt: now,
-        rejectedBy: adminUser.id,
-      }),
+      eventType: "auth.user_rejected",
+      persistDecision: (now) =>
+        this.#userRepository.recordRejection({
+          targetUserId,
+          adminUser,
+          rejectedAt: now,
+        }),
       invalidStatusMessage: "只有待審核帳號可以被拒絕。",
-      outboxMessage: {
-        type: "user-rejected",
-        subject: "社群資料中台註冊申請未通過",
-        body: "你的註冊申請目前未通過，若需要存取權限請聯絡管理員。",
-      },
     });
-    return sanitizeUser(updatedUser);
   }
 
   async #decideUser({
     targetUserId,
-    adminUser: _adminUser,
+    adminUser,
     nextStatus,
-    buildNextFields,
+    eventType,
+    persistDecision,
     invalidStatusMessage,
-    outboxMessage,
-  }: DecideUserParams): Promise<User | null> {
-    const user = await this.userApprovalRepository.findById(targetUserId);
-    if (!user) {
+  }: {
+    targetUserId: string;
+    adminUser: PublicUser;
+    nextStatus: UserStatus;
+    eventType: string;
+    persistDecision: (now: string) => Promise<User>;
+    invalidStatusMessage: string;
+  }): Promise<PublicUser> {
+    const { data, error } = await this.#supabaseClient.auth.admin.getUserById(targetUserId);
+    if (error || !data.user) {
       throw new HttpError(404, "USER_NOT_FOUND", "找不到指定的使用者。");
     }
-    if (user.status !== "pending") {
+    const metadata = readMetadata(data.user);
+    if (metadata.status !== "pending") {
       throw new HttpError(409, "USER_STATUS_INVALID", invalidStatusMessage);
     }
 
-    const now = this.clock().toISOString();
-    await this.#syncSupabaseAuthMetadata(user, nextStatus);
-
-    const updatedUser = await this.userApprovalRepository.decidePendingUser({
-      targetUserId,
-      nextStatus,
-      nextFields: {
-        ...buildNextFields(now),
-        updatedAt: now,
-      },
-      invalidStatusMessage,
-      outboxMessage: buildOutboxMessage({
-        createdAt: now,
-        to: user.email,
-        ...outboxMessage,
-      }),
+    await this.#updateAppMetadata(targetUserId, {
+      role: metadata.role,
+      status: nextStatus,
     });
 
-    return updatedUser;
+    const now = this.#clock().toISOString();
+    const profile = await persistDecision(now);
+    const user = {
+      ...profile,
+      role: metadata.role,
+      status: nextStatus,
+    };
+    await this.#auditEventRepository.create({
+      userId: targetUserId,
+      actorUserId: adminUser.id,
+      actorType: "admin",
+      eventType,
+      entityType: "profile",
+      entityId: targetUserId,
+    });
+
+    return toPublicUser(user);
   }
 
-  async #syncSupabaseAuthMetadata(user: User, status: UserStatus): Promise<void> {
-    if (!this.supabaseClient) {
-      return;
-    }
-
-    const authUserId = await this.#findSupabaseAuthUserId(user);
-    if (!authUserId) {
-      throw new HttpError(502, "SUPABASE_USER_NOT_FOUND", "找不到對應的 Supabase Auth 使用者。");
-    }
-
-    const { data, error: readError } = await this.supabaseClient.auth.admin.getUserById(authUserId);
-    if (readError) {
-      throw new HttpError(502, "SUPABASE_AUTH_ERROR", readError.message);
+  async #updateAppMetadata(
+    userId: string,
+    metadataPatch: { role: UserRole; status: UserStatus },
+  ): Promise<void> {
+    const { data, error: readError } = await this.#supabaseClient.auth.admin.getUserById(userId);
+    if (readError || !data.user) {
+      throw new HttpError(502, "SUPABASE_AUTH_ERROR", readError?.message ?? "找不到 Supabase Auth 使用者。");
     }
 
     const existingMetadata =
-      data.user?.app_metadata &&
+      data.user.app_metadata &&
       typeof data.user.app_metadata === "object" &&
       !Array.isArray(data.user.app_metadata)
         ? data.user.app_metadata
         : {};
 
-    const { error } = await this.supabaseClient.auth.admin.updateUserById(authUserId, {
+    const { error } = await this.#supabaseClient.auth.admin.updateUserById(userId, {
       app_metadata: {
         ...existingMetadata,
-        role: user.role,
-        status,
+        ...metadataPatch,
       },
     });
-
     if (error) {
       throw new HttpError(502, "SUPABASE_AUTH_ERROR", error.message);
     }
-  }
-
-  async #findSupabaseAuthUserId(user: User): Promise<string | null> {
-    if (!this.supabaseClient) {
-      return null;
-    }
-
-    const { data, error } = await this.supabaseClient.auth.admin.getUserById(user.id);
-    if (!error && data.user) {
-      return data.user.id;
-    }
-
-    const { data: usersData, error: listError } = await this.supabaseClient.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000,
-    });
-    if (listError) {
-      throw new HttpError(502, "SUPABASE_AUTH_ERROR", listError.message);
-    }
-
-    const matchedUser = usersData.users.find(
-      (entry) => entry.email?.toLowerCase() === user.email.toLowerCase(),
-    );
-    return matchedUser?.id ?? null;
   }
 }
