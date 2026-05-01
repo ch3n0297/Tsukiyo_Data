@@ -320,7 +320,7 @@ class MemorySheetSnapshotRepository {
   }
 }
 
-class MemoryUserRepository {
+class MemoryUserProfileRepository {
   readonly users = new Map<string, User>();
 
   async findById(userId: string): Promise<User | null> {
@@ -332,12 +332,6 @@ class MemoryUserRepository {
     const normalized = email.trim().toLowerCase();
     const user = [...this.users.values()].find((entry) => entry.email === normalized);
     return user ? { ...user } : null;
-  }
-
-  async listPendingUsers(): Promise<User[]> {
-    return [...this.users.values()]
-      .filter((user) => user.status === "pending")
-      .map((user) => ({ ...user }));
   }
 
   async upsertSignupUser({
@@ -434,7 +428,7 @@ export interface MemoryRepositories extends RuntimeRepositories {
   rawRecordRepository: MemoryRawRecordRepository;
   normalizedRecordRepository: MemoryNormalizedRecordRepository;
   sheetSnapshotRepository: MemorySheetSnapshotRepository;
-  userRepository: MemoryUserRepository;
+  userRepository: MemoryUserProfileRepository;
 }
 
 function createMemoryRepositories(): MemoryRepositories {
@@ -445,7 +439,7 @@ function createMemoryRepositories(): MemoryRepositories {
     rawRecordRepository: new MemoryRawRecordRepository(),
     normalizedRecordRepository: new MemoryNormalizedRecordRepository(),
     sheetSnapshotRepository: new MemorySheetSnapshotRepository(),
-    userRepository: new MemoryUserRepository(),
+    userRepository: new MemoryUserProfileRepository(),
   };
 }
 

@@ -51,6 +51,16 @@
   - Backend: 41 tests passed.
   - Frontend: 21 test files passed, 138 tests passed.
   - FileStore/session/reset/outbox absence audit returned no matches in `backend/src` or `tests`.
+
+## 2026-05-02 CodeRabbit Follow-up
+
+- `npm run typecheck:backend`: pass.
+  - Verified repository renames, seed pagination helper, audit repository error normalization, and Supabase profile repository clock injection compile.
+- `npm run typecheck && npm test && sh -c '! rg -n -e FileStore -e fs-store -e USE_SUPABASE_STORAGE -e SessionRepository -e UserRepository -e PasswordResetTokenRepository -e OutboxMessageRepository backend/src frontend/src tests'`: pass.
+  - Backend and frontend typecheck passed.
+  - Backend: 41 tests passed.
+  - Frontend: 21 test files passed, 138 tests passed.
+  - Expanded FileStore/session/user/reset/outbox absence audit returned no matches in `backend/src`, `frontend/src`, or `tests`.
 - Rerun after removing stale legacy auth/FileStore config fields and unused frontend legacy auth helpers: pass.
   - Backend and frontend typecheck passed.
   - Backend: 41 tests passed.

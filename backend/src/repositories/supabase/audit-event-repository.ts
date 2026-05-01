@@ -1,3 +1,4 @@
+import { HttpError } from "../../lib/errors.ts";
 import type { SupabaseClient } from "../../lib/supabase-client.ts";
 
 export interface AuditEventInput {
@@ -27,6 +28,12 @@ export class SupabaseAuditEventRepository {
       entity_id: event.entityId ?? null,
       metadata: event.metadata ?? {},
     });
-    if (error) throw error;
+    if (error) {
+      throw new HttpError(
+        500,
+        "AUDIT_EVENT_CREATE_FAILED",
+        `無法寫入 audit event：${error.message}`,
+      );
+    }
   }
 }

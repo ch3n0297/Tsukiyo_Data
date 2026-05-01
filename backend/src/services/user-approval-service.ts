@@ -2,7 +2,7 @@ import { HttpError } from "../lib/errors.ts";
 import type { SupabaseClient } from "../lib/supabase-client.ts";
 import type { AuthUser } from "../middleware/require-auth.ts";
 import type { AuditEventInput } from "../repositories/supabase/audit-event-repository.ts";
-import type { UserRepository } from "../repositories/user-repository.ts";
+import type { UserProfileRepository } from "../repositories/user-repository.ts";
 import type { PublicUser, User, UserRole, UserStatus } from "../types/user.ts";
 
 interface AuditEventRepository {
@@ -10,7 +10,7 @@ interface AuditEventRepository {
 }
 
 interface UserApprovalServiceOptions {
-  userRepository: UserRepository;
+  userRepository: UserProfileRepository;
   auditEventRepository: AuditEventRepository;
   supabaseClient: SupabaseClient;
   clock: () => Date;
@@ -60,9 +60,10 @@ function mergeProfileWithMetadata(
     updated_at?: string | null;
     app_metadata?: Record<string, unknown>;
   },
+  fallbackTimestamp: string,
 ): User {
   const metadata = readMetadata(authUser);
-  const createdAt = authUser.created_at ?? profile?.createdAt ?? new Date().toISOString();
+  const createdAt = authUser.created_at ?? profile?.createdAt ?? fallbackTimestamp;
   const displayName =
     profile?.displayName ??
     (typeof authUser.user_metadata?.name === "string" ? authUser.user_metadata.name : undefined) ??
@@ -96,7 +97,7 @@ function statusError(status: UserStatus): HttpError {
 }
 
 export class UserApprovalService {
-  readonly #userRepository: UserRepository;
+  readonly #userRepository: UserProfileRepository;
   readonly #auditEventRepository: AuditEventRepository;
   readonly #supabaseClient: SupabaseClient;
   readonly #clock: () => Date;
@@ -199,7 +200,11 @@ export class UserApprovalService {
         continue;
       }
       const profile = await this.#userRepository.findById(authUser.id);
-      users.push(toPublicUser(mergeProfileWithMetadata(profile, authUser)));
+      users.push(toPublicUser(mergeProfileWithMetadata(
+        profile,
+        authUser,
+        this.#clock().toISOString(),
+      )));
     }
 
     return users;

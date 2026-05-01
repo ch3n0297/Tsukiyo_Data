@@ -81,6 +81,37 @@ export async function seedDemoData({ accountRepository, clock, overwrite = false
   return demoAccounts;
 }
 
+async function findBootstrapAdminUserId({
+  bootstrapAdminEmail,
+  supabaseClient,
+}: {
+  bootstrapAdminEmail: string;
+  supabaseClient: ReturnType<typeof createSupabaseClient>;
+}): Promise<string | null> {
+  const normalizedEmail = bootstrapAdminEmail.trim().toLowerCase();
+  const perPage = 1000;
+
+  for (let page = 1; ; page += 1) {
+    const { data, error } = await supabaseClient.auth.admin.listUsers({
+      page,
+      perPage,
+    });
+    if (error) {
+      throw error;
+    }
+
+    const owner = data.users.find(
+      (user) => user.email?.trim().toLowerCase() === normalizedEmail,
+    );
+    if (owner) {
+      return owner.id;
+    }
+    if (data.users.length < perPage) {
+      return null;
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const config = loadConfig();
   if (!config.supabaseUrl || !config.supabaseServiceRoleKey) {
@@ -91,21 +122,15 @@ async function main(): Promise<void> {
   }
 
   const supabaseClient = createSupabaseClient(config.supabaseUrl, config.supabaseServiceRoleKey);
-  const { data, error } = await supabaseClient.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
+  const ownerId = await findBootstrapAdminUserId({
+    bootstrapAdminEmail: config.bootstrapAdminEmail,
+    supabaseClient,
   });
-  if (error) {
-    throw error;
-  }
-  const owner = data.users.find(
-    (user) => user.email?.trim().toLowerCase() === config.bootstrapAdminEmail?.trim().toLowerCase(),
-  );
-  if (!owner) {
+  if (!ownerId) {
     throw new Error("Bootstrap admin user must exist before seeding demo accounts.");
   }
 
-  const accountRepository = new SupabaseAccountConfigRepository(supabaseClient, owner.id);
+  const accountRepository = new SupabaseAccountConfigRepository(supabaseClient, ownerId);
   const accounts = await seedDemoData({
     accountRepository,
     clock: config.clock,

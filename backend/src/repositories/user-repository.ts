@@ -8,10 +8,9 @@ export interface SignupSyncInput {
   updatedAt: string;
 }
 
-export interface UserRepository {
+export interface UserProfileRepository {
   findById(userId: string): Promise<User | null>;
   findByEmail(email: string): Promise<User | null>;
-  listPendingUsers(): Promise<User[]>;
   upsertSignupUser(input: SignupSyncInput): Promise<User>;
   recordApproval(params: {
     targetUserId: string;

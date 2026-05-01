@@ -16,7 +16,7 @@ import { SupabaseJobRepository } from "./repositories/supabase/job-repository.ts
 import { SupabaseNormalizedRecordRepository } from "./repositories/supabase/normalized-record-repository.ts";
 import { SupabaseRawRecordRepository } from "./repositories/supabase/raw-record-repository.ts";
 import { SupabaseSheetSnapshotRepository } from "./repositories/supabase/sheet-snapshot-repository.ts";
-import { SupabaseUserRepository } from "./repositories/supabase/user-repository.ts";
+import { SupabaseUserProfileRepository } from "./repositories/supabase/user-repository.ts";
 import type { JobRepository as JR } from "./repositories/job-repository.ts";
 import type { AccountConfigRepository as ACR } from "./repositories/account-config-repository.ts";
 import {
@@ -205,6 +205,7 @@ async function resolveStorageUserId(
 function createSupabaseRepositories(
   supabaseClient: SupabaseClient,
   storageUserId: string,
+  clock: () => Date,
 ): RuntimeRepositories {
   return {
     accountRepository: new SupabaseAccountConfigRepository(supabaseClient, storageUserId),
@@ -213,7 +214,7 @@ function createSupabaseRepositories(
     rawRecordRepository: new SupabaseRawRecordRepository(supabaseClient, storageUserId),
     normalizedRecordRepository: new SupabaseNormalizedRecordRepository(supabaseClient, storageUserId),
     sheetSnapshotRepository: new SupabaseSheetSnapshotRepository(supabaseClient, storageUserId),
-    userRepository: new SupabaseUserRepository(supabaseClient),
+    userRepository: new SupabaseUserProfileRepository(supabaseClient, { clock }),
   };
 }
 
@@ -226,7 +227,7 @@ export async function createApp(overrides: AppOverrides = {}): Promise<AppInstan
     overrides.storageUserId,
   );
   const repositories =
-    overrides.repositories ?? createSupabaseRepositories(supabaseClient, storageUserId);
+    overrides.repositories ?? createSupabaseRepositories(supabaseClient, storageUserId, config.clock);
 
   if (config.seedDemoData) {
     await seedDemoData({

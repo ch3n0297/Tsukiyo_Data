@@ -43,3 +43,14 @@
 - Removed stale config fields for `DATA_DIR`, legacy session cookies, and backend password-reset TTL.
 - Removed unused frontend HTTP helpers for legacy backend login/logout/password-reset endpoints.
 - Result: all AC test commands pass; no runtime fallback references remain in the audited paths.
+
+## 2026-05-02 CodeRabbit Follow-up
+
+- Reviewed 20 CodeRabbit issues on PR #14 and applied valid blockers.
+- Tightened Supabase `profiles` and `audit_events` migration with auth user FKs, approval-state check, `updated_at` trigger, audit indexes, and RLS policies.
+- Replaced raw Supabase audit insert errors with `HttpError`.
+- Added paginated bootstrap-admin lookup to `seed-demo.ts`.
+- Renamed the app-owned profile repository contract away from `UserRepository` and removed the unused pending-list repository method; pending approval lists remain sourced from Supabase Auth `app_metadata`.
+- Injected clock-derived fallbacks into Supabase profile mapping and pending-user profile/auth metadata merging.
+- Updated docs pack source/data/spec/test-plan to cover repo-relative macro review source, FileStore data migration handling, display-name/email ownership, RLS/indexes, HMAC internal route continuity, removed `useSupabaseStorage`, and expanded AC-05 audit scope.
+- Evaluated the AuthScreen cookie-session suggestion as invalid for this P0 because Supabase Auth is the required runtime identity provider.

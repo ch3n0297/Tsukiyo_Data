@@ -50,6 +50,6 @@ flowchart LR
 
 ## Notes
 
-- `/Users/hjc/Downloads/tsukiyo_macro_architecture_review.md` is an input review, not binding spec.
+- `Source/tsukiyo_macro_architecture_review.md` is an input review, not binding spec.
 - P1 job/worker formalization is deliberately excluded from this pack.
 - Main must not preserve FileStore as local/test fallback; tests should use mocks/stubs or Supabase-backed fixtures.

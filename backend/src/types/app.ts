@@ -6,7 +6,7 @@ import type { JobRepository } from '../repositories/job-repository.ts';
 import type { NormalizedRecordRepository } from '../repositories/normalized-record-repository.ts';
 import type { RawRecordRepository } from '../repositories/raw-record-repository.ts';
 import type { SheetSnapshotRepository } from '../repositories/sheet-snapshot-repository.ts';
-import type { UserRepository } from '../repositories/user-repository.ts';
+import type { UserProfileRepository } from '../repositories/user-repository.ts';
 import type { JobQueue } from '../services/job-queue.ts';
 import type { ManualRefreshService } from '../services/manual-refresh-service.ts';
 import type { NormalizationService } from '../services/normalization-service.ts';
@@ -29,7 +29,7 @@ export interface RuntimeRepositories {
   rawRecordRepository: RawRecordRepository;
   normalizedRecordRepository: NormalizedRecordRepository;
   sheetSnapshotRepository: SheetSnapshotRepository;
-  userRepository: UserRepository;
+  userRepository: UserProfileRepository;
   auditEventRepository: AuditEventRepository;
 }
 

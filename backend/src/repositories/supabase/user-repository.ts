@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "../../lib/supabase-client.ts";
 import type { PublicUser, User, UserRole, UserStatus } from "../../types/user.ts";
-import type { SignupSyncInput } from "../user-repository.ts";
+import type { SignupSyncInput, UserProfileRepository } from "../user-repository.ts";
 
 function readString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
@@ -12,9 +12,13 @@ function readNullableString(value: unknown): string | null {
 
 function mapProfile(
   row: Record<string, unknown>,
-  { role = "member", status = "pending" }: { role?: UserRole; status?: UserStatus } = {},
+  {
+    fallbackTimestamp,
+    role = "member",
+    status = "pending",
+  }: { fallbackTimestamp: string; role?: UserRole; status?: UserStatus },
 ): User {
-  const createdAt = readString(row.created_at, new Date().toISOString());
+  const createdAt = readString(row.created_at, fallbackTimestamp);
   return {
     id: readString(row.user_id),
     email: readString(row.email),
@@ -31,11 +35,17 @@ function mapProfile(
   };
 }
 
-export class SupabaseUserRepository {
+export class SupabaseUserProfileRepository implements UserProfileRepository {
   readonly #client: SupabaseClient;
+  readonly #clock: () => Date;
 
-  constructor(client: SupabaseClient) {
+  constructor(client: SupabaseClient, { clock = () => new Date() }: { clock?: () => Date } = {}) {
     this.#client = client;
+    this.#clock = clock;
+  }
+
+  #fallbackTimestamp(): string {
+    return this.#clock().toISOString();
   }
 
   async findById(userId: string): Promise<User | null> {
@@ -45,7 +55,9 @@ export class SupabaseUserRepository {
       .eq("user_id", userId)
       .maybeSingle();
     if (error) throw error;
-    return data ? mapProfile(data as Record<string, unknown>) : null;
+    return data ? mapProfile(data as Record<string, unknown>, {
+      fallbackTimestamp: this.#fallbackTimestamp(),
+    }) : null;
   }
 
   async findByEmail(email: string): Promise<User | null> {
@@ -55,16 +67,9 @@ export class SupabaseUserRepository {
       .eq("email", email.trim().toLowerCase())
       .maybeSingle();
     if (error) throw error;
-    return data ? mapProfile(data as Record<string, unknown>) : null;
-  }
-
-  async listPendingUsers(): Promise<User[]> {
-    const { data, error } = await this.#client
-      .from("profiles")
-      .select("*")
-      .order("created_at", { ascending: true });
-    if (error) throw error;
-    return (data ?? []).map((row) => mapProfile(row as Record<string, unknown>));
+    return data ? mapProfile(data as Record<string, unknown>, {
+      fallbackTimestamp: this.#fallbackTimestamp(),
+    }) : null;
   }
 
   async upsertSignupUser(input: SignupSyncInput): Promise<User> {
@@ -81,7 +86,9 @@ export class SupabaseUserRepository {
       .select("*")
       .single();
     if (error) throw error;
-    return mapProfile(data as Record<string, unknown>);
+    return mapProfile(data as Record<string, unknown>, {
+      fallbackTimestamp: input.createdAt,
+    });
   }
 
   async recordApproval({
@@ -106,7 +113,10 @@ export class SupabaseUserRepository {
       .select("*")
       .single();
     if (error) throw error;
-    return mapProfile(data as Record<string, unknown>, { status: "active" });
+    return mapProfile(data as Record<string, unknown>, {
+      fallbackTimestamp: approvedAt,
+      status: "active",
+    });
   }
 
   async recordRejection({
@@ -129,6 +139,9 @@ export class SupabaseUserRepository {
       .select("*")
       .single();
     if (error) throw error;
-    return mapProfile(data as Record<string, unknown>, { status: "rejected" });
+    return mapProfile(data as Record<string, unknown>, {
+      fallbackTimestamp: rejectedAt,
+      status: "rejected",
+    });
   }
 }
