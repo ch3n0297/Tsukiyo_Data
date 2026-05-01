@@ -8,3 +8,4 @@
 | AC-03 | 8f5b262 | Supabase Auth password reset/logout frontend flow; legacy backend login/reset endpoints remain disabled compatibility stubs. |
 | AC-04 | 8f5b262 | Removed FileStore runtime composition and legacy auth/reset/session/outbox repositories/services; Supabase repositories are the runtime path. |
 | AC-05 | 8f5b262 | Full typecheck/test regression and FileStore/session/reset/outbox absence audit passed. |
+| CodeRabbit follow-up | 38e9012 | Addressed valid PR #14 review blockers: migration constraints/RLS/indexes, seed pagination, profile repository clock/error cleanup, docs migration strategy, and expanded absence audit. |
