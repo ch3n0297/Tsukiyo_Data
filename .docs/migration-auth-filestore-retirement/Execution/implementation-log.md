@@ -54,3 +54,10 @@
 - Injected clock-derived fallbacks into Supabase profile mapping and pending-user profile/auth metadata merging.
 - Updated docs pack source/data/spec/test-plan to cover repo-relative macro review source, FileStore data migration handling, display-name/email ownership, RLS/indexes, HMAC internal route continuity, removed `useSupabaseStorage`, and expanded AC-05 audit scope.
 - Evaluated the AuthScreen cookie-session suggestion as invalid for this P0 because Supabase Auth is the required runtime identity provider.
+
+## 2026-05-03 PR #14 Hygiene
+
+- Merged `origin/main` into `fix/migration-auth-filestore-retirement` without history rewrite to pick up the repo-level `.claude/` and `CLAUDE.md` local-only ignore rules.
+- Removed tracked `.claude/handoff.md` from the PR so workflow state stays in `.docs/*/Execution/`.
+- Updated `index.md` to point implementation state at `Execution/slice-tracker.md` and Execution reports instead of `.claude/handoff.md`.
+- Dropped the unreferenced local `docs/system-flowchart-after-retirement.svg` artifact from the working tree instead of adding it to the PR.

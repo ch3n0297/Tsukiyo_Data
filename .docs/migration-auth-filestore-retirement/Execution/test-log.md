@@ -66,3 +66,11 @@
   - Backend: 41 tests passed.
   - Frontend: 21 test files passed, 138 tests passed.
   - FileStore/session/reset/outbox absence audit returned no matches in `backend/src` or `tests`.
+
+## 2026-05-03 PR #14 Hygiene
+
+- `npm run typecheck && npm test && sh -c '! rg -n -e FileStore -e fs-store -e USE_SUPABASE_STORAGE -e SessionRepository -e UserRepository -e PasswordResetTokenRepository -e OutboxMessageRepository backend/src frontend/src tests'`: pass.
+  - Backend and frontend typecheck passed.
+  - Backend: 41 tests passed.
+  - Frontend: 21 test files passed, 138 tests passed.
+  - FileStore/session/user/reset/outbox absence audit returned no matches in `backend/src`, `frontend/src`, or `tests`.

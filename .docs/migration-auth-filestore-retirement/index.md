@@ -26,8 +26,8 @@ This pack constrains P0 work only:
 
 - Status: `ready_for_implementation`
 - Baseline snapshots: `Execution/baseline-*.md`
-- Handoff: `.claude/handoff.md`
-- Current slice: `AC-01`
+- Current slice source: first non-`committed` row in `Execution/slice-tracker.md`
+- Execution reports: `Execution/implementation-log.md`, `Execution/test-log.md`, `Execution/commit-log.md`
 
 ## Document Flow
 
