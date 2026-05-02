@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  authHeaders,
   createAccount,
   loginAsAdmin,
   sendJsonRequest,
@@ -59,6 +60,7 @@ test("ui read APIs expose aggregated account snapshots and latest output rows", 
       baseUrl,
       pathName: "/api/v1/refresh-jobs/manual",
       body: {
+        owner_user_id: "11111111-1111-4111-8111-111111111111",
         platform: "instagram",
         account_id: "ig-ui-1",
         refresh_days: 7,
@@ -102,6 +104,81 @@ test("ui read APIs expose aggregated account snapshots and latest output rows", 
   }
 });
 
+test("ui read APIs scope accounts to the active JWT owner", async () => {
+  const memberOwnerId = "22222222-2222-4222-8222-222222222222";
+  const accounts = [
+    {
+      ...createAccount({
+        platform: "instagram",
+        accountId: "ig-owner-shared",
+        clientName: "Admin Owner Account",
+      }),
+      ownerUserId: "11111111-1111-4111-8111-111111111111",
+    },
+    {
+      ...createAccount({
+        platform: "instagram",
+        accountId: "ig-member-only",
+        clientName: "Member Owner Account",
+      }),
+      ownerUserId: memberOwnerId,
+    },
+  ];
+
+  const { auth, cleanup, baseUrl } = await setupTestApp({
+    accounts,
+    fixtures: {
+      "instagram--ig-owner-shared.json": { items: [] },
+      "instagram--ig-member-only.json": { items: [] },
+    },
+  });
+
+  try {
+    auth.addUser({
+      id: memberOwnerId,
+      email: "member-owner@example.com",
+      displayName: "成員擁有者",
+      role: "member",
+      status: "active",
+    });
+
+    const adminLogin = await loginAsAdmin(baseUrl, auth);
+    assert.equal(adminLogin.response.status, 200);
+
+    const memberHeaders = authHeaders(auth.authorizationFor(memberOwnerId));
+
+    const adminAccounts = await fetch(`${baseUrl}/api/v1/ui/accounts`, {
+      headers: adminLogin.headers,
+    });
+    const adminJson = await adminAccounts.json();
+    assert.equal(adminAccounts.status, 200);
+    assert.deepEqual(
+      adminJson.accounts.map((account) => account.accountId),
+      ["ig-owner-shared"],
+    );
+
+    const memberAccounts = await fetch(`${baseUrl}/api/v1/ui/accounts`, {
+      headers: memberHeaders,
+    });
+    const memberJson = await memberAccounts.json();
+    assert.equal(memberAccounts.status, 200);
+    assert.deepEqual(
+      memberJson.accounts.map((account) => account.accountId),
+      ["ig-member-only"],
+    );
+
+    const crossOwnerDetail = await fetch(
+      `${baseUrl}/api/v1/ui/accounts/instagram/ig-member-only`,
+      { headers: adminLogin.headers },
+    );
+    const crossOwnerJson = await crossOwnerDetail.json();
+    assert.equal(crossOwnerDetail.status, 404);
+    assert.equal(crossOwnerJson.error, "ACCOUNT_NOT_FOUND");
+  } finally {
+    await cleanup();
+  }
+});
+
 test("frontend does not bypass existing manual refresh protection", async () => {
   const accounts = [createAccount({ platform: "instagram", accountId: "ig-protected-1" })];
   const fixtures = {
@@ -117,6 +194,7 @@ test("frontend does not bypass existing manual refresh protection", async () => 
         "content-type": "application/json",
       },
       body: JSON.stringify({
+        owner_user_id: "11111111-1111-4111-8111-111111111111",
         platform: "instagram",
         account_id: "ig-protected-1",
         refresh_days: 7,

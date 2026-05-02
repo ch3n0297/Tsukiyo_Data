@@ -19,6 +19,7 @@ test("manual refresh rejects invalid refresh_days", async () => {
       baseUrl,
       pathName: "/api/v1/refresh-jobs/manual",
       body: {
+        owner_user_id: "11111111-1111-4111-8111-111111111111",
         platform: "instagram",
         account_id: "ig-invalid-1",
         refresh_days: 366,
@@ -68,6 +69,7 @@ test("manual refresh rejects duplicate active jobs", async () => {
       baseUrl,
       pathName: "/api/v1/refresh-jobs/manual",
       body: {
+        owner_user_id: "11111111-1111-4111-8111-111111111111",
         platform: "instagram",
         account_id: "ig-dup-1",
         refresh_days: 7,
@@ -80,6 +82,7 @@ test("manual refresh rejects duplicate active jobs", async () => {
       baseUrl,
       pathName: "/api/v1/refresh-jobs/manual",
       body: {
+        owner_user_id: "11111111-1111-4111-8111-111111111111",
         platform: "instagram",
         account_id: "ig-dup-1",
         refresh_days: 7,
@@ -140,6 +143,7 @@ test("manual refresh rate limits by request source", async () => {
       baseUrl,
       pathName: "/api/v1/refresh-jobs/manual",
       body: {
+        owner_user_id: "11111111-1111-4111-8111-111111111111",
         platform: "instagram",
         account_id: "ig-rate-1",
         refresh_days: 7,
@@ -152,6 +156,7 @@ test("manual refresh rate limits by request source", async () => {
       baseUrl,
       pathName: "/api/v1/refresh-jobs/manual",
       body: {
+        owner_user_id: "11111111-1111-4111-8111-111111111111",
         platform: "facebook",
         account_id: "fb-rate-1",
         refresh_days: 7,
@@ -184,6 +189,7 @@ test("upstream failures mark the job and sheet snapshot as error", async () => {
       baseUrl,
       pathName: "/api/v1/refresh-jobs/manual",
       body: {
+        owner_user_id: "11111111-1111-4111-8111-111111111111",
         platform: "tiktok",
         account_id: "tt-fail-1",
         refresh_days: 7,

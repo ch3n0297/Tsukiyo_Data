@@ -9,6 +9,7 @@ export type RequestSource = 'manual-refresh' | 'scheduled-sync';
 
 export interface Job {
   id: string;
+  ownerUserId: string;
   accountKey: string;
   platform: Platform;
   accountId: string;

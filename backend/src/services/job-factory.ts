@@ -3,6 +3,7 @@ import type { Job, TriggerType, RequestSource } from "../types/job.ts";
 import type { Platform } from "../types/platform.ts";
 
 export interface CreateQueuedJobParams {
+  ownerUserId: string;
   accountKey: string;
   platform: Platform;
   accountId: string;
@@ -13,9 +14,10 @@ export interface CreateQueuedJobParams {
 }
 
 export function createQueuedJob(params: CreateQueuedJobParams): Job {
-  const { accountKey, platform, accountId, triggerType, requestSource, refreshDays, clock } = params;
+  const { ownerUserId, accountKey, platform, accountId, triggerType, requestSource, refreshDays, clock } = params;
   return {
     id: crypto.randomUUID(),
+    ownerUserId,
     accountKey,
     platform,
     accountId,

@@ -11,6 +11,7 @@ function assertNonEmptyString(value: unknown, fieldName: string): void {
 }
 
 export interface ManualRefreshPayload {
+  ownerUserId: string;
   platform: Platform;
   accountId: string;
   refreshDays: number;
@@ -27,6 +28,7 @@ export function validateManualRefreshPayload(payload: unknown): ManualRefreshPay
   }
 
   const p = payload as Record<string, unknown>;
+  assertNonEmptyString(p.owner_user_id, "owner_user_id");
   assertNonEmptyString(p.platform, "platform");
   assertNonEmptyString(p.account_id, "account_id");
   assertNonEmptyString(p.request_source, "request_source");
@@ -53,6 +55,7 @@ export function validateManualRefreshPayload(payload: unknown): ManualRefreshPay
   }
 
   return {
+    ownerUserId: p.owner_user_id as string,
     platform: p.platform as Platform,
     accountId: p.account_id as string,
     refreshDays,

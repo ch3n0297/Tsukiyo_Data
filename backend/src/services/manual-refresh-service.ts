@@ -109,6 +109,7 @@ export class ManualRefreshService {
     }
 
     const job = createQueuedJob({
+      ownerUserId: validated.ownerUserId,
       accountKey,
       platform: accountConfig.platform,
       accountId: accountConfig.accountId,

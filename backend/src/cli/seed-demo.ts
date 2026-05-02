@@ -9,12 +9,13 @@ import type { AccountConfig } from "../types/account-config.ts";
 
 const DEMO_REFRESH_DAYS = 90;
 
-export function createDemoAccounts(clock: () => Date): AccountConfig[] {
+export function createDemoAccounts(clock: () => Date, ownerUserId: string): AccountConfig[] {
   const now = clock().toISOString();
 
   return [
     {
       id: crypto.randomUUID(),
+      ownerUserId,
       clientName: "示範客戶",
       platform: "instagram",
       accountId: "acct-instagram-demo",
@@ -31,6 +32,7 @@ export function createDemoAccounts(clock: () => Date): AccountConfig[] {
     },
     {
       id: crypto.randomUUID(),
+      ownerUserId,
       clientName: "示範客戶",
       platform: "facebook",
       accountId: "acct-facebook-demo",
@@ -47,6 +49,7 @@ export function createDemoAccounts(clock: () => Date): AccountConfig[] {
     },
     {
       id: crypto.randomUUID(),
+      ownerUserId,
       clientName: "示範客戶",
       platform: "tiktok",
       accountId: "acct-tiktok-demo",
@@ -67,16 +70,22 @@ export function createDemoAccounts(clock: () => Date): AccountConfig[] {
 export interface SeedDemoDataOptions {
   accountRepository: AccountConfigRepository;
   clock: () => Date;
+  ownerUserId: string;
   overwrite?: boolean;
 }
 
-export async function seedDemoData({ accountRepository, clock, overwrite = false }: SeedDemoDataOptions): Promise<AccountConfig[]> {
+export async function seedDemoData({
+  accountRepository,
+  clock,
+  ownerUserId,
+  overwrite = false,
+}: SeedDemoDataOptions): Promise<AccountConfig[]> {
   const existing = await accountRepository.listAll();
   if (existing.length > 0 && !overwrite) {
     return existing;
   }
 
-  const demoAccounts = createDemoAccounts(clock);
+  const demoAccounts = createDemoAccounts(clock, ownerUserId);
   await accountRepository.replaceAll(demoAccounts);
   return demoAccounts;
 }
@@ -134,6 +143,7 @@ async function main(): Promise<void> {
   const accounts = await seedDemoData({
     accountRepository,
     clock: config.clock,
+    ownerUserId: ownerId,
     overwrite: true,
   });
 

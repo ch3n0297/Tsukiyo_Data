@@ -10,15 +10,16 @@ import { sendJson } from "./lib/http.ts";
 import { createSupabaseClient } from "./lib/supabase-client.ts";
 import type { SupabaseClient } from "./lib/supabase-client.ts";
 import { createRequireAuth } from "./middleware/require-auth.ts";
-import { SupabaseAccountConfigRepository } from "./repositories/supabase/account-config-repository.ts";
+import {
+  SupabaseAccountConfigRepository,
+  SupabaseSystemAccountConfigRepository,
+} from "./repositories/supabase/account-config-repository.ts";
 import { SupabaseAuditEventRepository } from "./repositories/supabase/audit-event-repository.ts";
-import { SupabaseJobRepository } from "./repositories/supabase/job-repository.ts";
+import { SupabaseJobRepository, SupabaseSystemJobRepository } from "./repositories/supabase/job-repository.ts";
 import { SupabaseNormalizedRecordRepository } from "./repositories/supabase/normalized-record-repository.ts";
 import { SupabaseRawRecordRepository } from "./repositories/supabase/raw-record-repository.ts";
 import { SupabaseSheetSnapshotRepository } from "./repositories/supabase/sheet-snapshot-repository.ts";
 import { SupabaseUserProfileRepository } from "./repositories/supabase/user-repository.ts";
-import type { JobRepository as JR } from "./repositories/job-repository.ts";
-import type { AccountConfigRepository as ACR } from "./repositories/account-config-repository.ts";
 import {
   handleApproveUserRoute,
   handleCurrentUserRoute,
@@ -44,10 +45,14 @@ import { SchedulerService } from "./services/scheduler-service.ts";
 import { StatusService } from "./services/status-service.ts";
 import { UiDashboardService } from "./services/ui-dashboard-service.ts";
 import { UserApprovalService } from "./services/user-approval-service.ts";
-import type { RuntimeRepositories, Services } from "./types/app.ts";
+import type {
+  RuntimeRepositories,
+  Services,
+  SystemOwnershipRepository,
+  UserScopedRepositories,
+  UserScopedServices,
+} from "./types/app.ts";
 import type { Job } from "./types/job.ts";
-
-const MIGRATION_SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 export interface AppInstance {
   config: AppConfig;
@@ -61,28 +66,26 @@ export interface AppInstance {
 export type AppOverrides = ConfigOverrides & {
   supabaseClient?: SupabaseClient;
   repositories?: RuntimeRepositories;
-  storageUserId?: string;
 };
 
 interface RecoverJobsParams {
-  accountRepository: ACR;
-  jobRepository: JR;
+  systemOwnershipRepository: SystemOwnershipRepository;
+  getOwnerServices(ownerUserId: string): UserScopedServices;
   jobQueue: JobQueue;
-  statusService: StatusService;
   clock: () => Date;
 }
 
 async function recoverJobs({
-  accountRepository,
-  jobRepository,
+  systemOwnershipRepository,
+  getOwnerServices,
   jobQueue,
-  statusService,
   clock,
 }: RecoverJobsParams): Promise<void> {
-  const runningJobs = await jobRepository.listByStatuses(["running"]);
+  const runningJobs = await systemOwnershipRepository.listJobsByStatusesAcrossOwners(["running"]);
 
   for (const runningJob of runningJobs) {
-    const accountConfig = await accountRepository.findByPlatformAndAccountId(
+    const ownerServices = getOwnerServices(runningJob.ownerUserId);
+    const accountConfig = await ownerServices.accountRepository.findByPlatformAndAccountId(
       runningJob.platform,
       runningJob.accountId,
     );
@@ -95,7 +98,7 @@ async function recoverJobs({
       systemMessage: "服務重新啟動，工作在執行期間中斷。",
     };
 
-    await jobRepository.updateById(runningJob.id, {
+    await ownerServices.jobRepository.updateById(runningJob.id, {
       status: failedJob.status,
       finishedAt: failedJob.finishedAt,
       errorCode: failedJob.errorCode,
@@ -103,11 +106,11 @@ async function recoverJobs({
     });
 
     if (accountConfig) {
-      await statusService.markError(accountConfig, failedJob, failedJob.systemMessage);
+      await ownerServices.statusService.markError(accountConfig, failedJob, failedJob.systemMessage);
     }
   }
 
-  const queuedJobs = await jobRepository.listByStatuses(["queued"]);
+  const queuedJobs = await systemOwnershipRepository.listJobsByStatusesAcrossOwners(["queued"]);
   for (const job of queuedJobs) {
     jobQueue.enqueue(job);
   }
@@ -133,22 +136,14 @@ function createConfiguredSupabaseClient(config: AppConfig): SupabaseClient {
   return createSupabaseClient(config.supabaseUrl, config.supabaseServiceRoleKey);
 }
 
-async function resolveStorageUserId(
+async function resolveBootstrapAdminUserId(
   supabaseClient: SupabaseClient,
   config: AppConfig,
-  overrideUserId?: string,
 ): Promise<string> {
-  if (overrideUserId) {
-    return overrideUserId;
-  }
-
   if (!config.bootstrapAdminEmail || !config.bootstrapAdminPassword) {
-    if (config.seedDemoData) {
-      throw new Error(
-        "Supabase demo seed requires BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD.",
-      );
-    }
-    return MIGRATION_SYSTEM_USER_ID;
+    throw new Error(
+      "Supabase demo seed requires BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD.",
+    );
   }
 
   const { data, error } = await supabaseClient.auth.admin.listUsers({
@@ -204,35 +199,151 @@ async function resolveStorageUserId(
 
 function createSupabaseRepositories(
   supabaseClient: SupabaseClient,
-  storageUserId: string,
   clock: () => Date,
 ): RuntimeRepositories {
+  const scopedRepositories = new Map<string, UserScopedRepositories>();
+  const forUser = (userId: string): UserScopedRepositories => {
+    const trimmedUserId = userId.trim();
+    if (!trimmedUserId) {
+      throw new Error("Owner user id is required for user-owned Supabase repositories.");
+    }
+    const existing = scopedRepositories.get(trimmedUserId);
+    if (existing) {
+      return existing;
+    }
+    const scoped: UserScopedRepositories = {
+      accountRepository: new SupabaseAccountConfigRepository(supabaseClient, trimmedUserId),
+      jobRepository: new SupabaseJobRepository(supabaseClient, trimmedUserId),
+      rawRecordRepository: new SupabaseRawRecordRepository(supabaseClient, trimmedUserId),
+      normalizedRecordRepository: new SupabaseNormalizedRecordRepository(supabaseClient, trimmedUserId),
+      sheetSnapshotRepository: new SupabaseSheetSnapshotRepository(supabaseClient, trimmedUserId),
+    };
+    scopedRepositories.set(trimmedUserId, scoped);
+    return scoped;
+  };
+
+  const unavailable = () => {
+    throw new Error("Use services.forUser(userId) for user-owned runtime repositories.");
+  };
+  const systemJobRepository = new SupabaseSystemJobRepository(supabaseClient);
+  const systemAccountRepository = new SupabaseSystemAccountConfigRepository(supabaseClient);
+
   return {
-    accountRepository: new SupabaseAccountConfigRepository(supabaseClient, storageUserId),
+    accountRepository: {
+      listAll: () => systemAccountRepository.listActiveAccountsWithOwners(),
+      listActive: () => systemAccountRepository.listActiveAccountsWithOwners(),
+      replaceAll: unavailable,
+      findByPlatformAndAccountId: unavailable,
+      updateByAccountKey: unavailable,
+    },
     auditEventRepository: new SupabaseAuditEventRepository(supabaseClient),
-    jobRepository: new SupabaseJobRepository(supabaseClient, storageUserId),
-    rawRecordRepository: new SupabaseRawRecordRepository(supabaseClient, storageUserId),
-    normalizedRecordRepository: new SupabaseNormalizedRecordRepository(supabaseClient, storageUserId),
-    sheetSnapshotRepository: new SupabaseSheetSnapshotRepository(supabaseClient, storageUserId),
+    jobRepository: {
+      listAll: () => systemJobRepository.listJobsByStatusesAcrossOwners(["queued", "running", "success", "error"]),
+      listByStatuses: (statuses) => systemJobRepository.listJobsByStatusesAcrossOwners(statuses),
+      create: unavailable,
+      findById: unavailable,
+      updateById: unavailable,
+      findActiveByAccountKey: unavailable,
+      listRecentBySource: unavailable,
+      findLatestAcceptedJob: unavailable,
+    },
+    rawRecordRepository: {
+      listAll: unavailable,
+      appendMany: unavailable,
+    },
+    normalizedRecordRepository: {
+      listAll: unavailable,
+      replaceForAccount: unavailable,
+    },
+    sheetSnapshotRepository: {
+      listStatuses: unavailable,
+      listOutputs: unavailable,
+      upsertStatus: unavailable,
+      upsertOutput: unavailable,
+    },
     userRepository: new SupabaseUserProfileRepository(supabaseClient, { clock }),
+    systemOwnershipRepository: {
+      listActiveAccountsWithOwners: () => systemAccountRepository.listActiveAccountsWithOwners(),
+      listJobsByStatusesAcrossOwners: (statuses) =>
+        systemJobRepository.listJobsByStatusesAcrossOwners(statuses),
+    },
+    forUser,
   };
 }
 
 export async function createApp(overrides: AppOverrides = {}): Promise<AppInstance> {
   const config = loadConfig(overrides);
   const supabaseClient = overrides.supabaseClient ?? createConfiguredSupabaseClient(config);
-  const storageUserId = await resolveStorageUserId(
-    supabaseClient,
-    config,
-    overrides.storageUserId,
-  );
   const repositories =
-    overrides.repositories ?? createSupabaseRepositories(supabaseClient, storageUserId, config.clock);
+    overrides.repositories ?? createSupabaseRepositories(supabaseClient, config.clock);
+  const normalizationService = createNormalizationService({ clock: config.clock });
+  const platformRegistry = createPlatformRegistry({ fixturesDir: config.fixturesDir });
+
+  let jobQueue: JobQueue;
+  const scopedServiceCache = new Map<string, UserScopedServices>();
+  const getScopedServices = (userId: string): UserScopedServices => {
+    const existing = scopedServiceCache.get(userId);
+    if (existing) {
+      return existing;
+    }
+    const scopedRepositories = repositories.forUser(userId);
+    const scopedSheetGateway = new FileSheetGateway({
+      sheetSnapshotRepository: scopedRepositories.sheetSnapshotRepository,
+      clock: config.clock,
+    });
+    const scopedStatusService = new StatusService({
+      accountRepository: scopedRepositories.accountRepository,
+      sheetGateway: scopedSheetGateway,
+      clock: config.clock,
+    });
+    const scopedRefreshOrchestrator = new RefreshOrchestrator({
+      accountRepository: scopedRepositories.accountRepository,
+      jobRepository: scopedRepositories.jobRepository,
+      rawRecordRepository: scopedRepositories.rawRecordRepository,
+      normalizedRecordRepository: scopedRepositories.normalizedRecordRepository,
+      platformRegistry,
+      normalizationService,
+      statusService: scopedStatusService,
+      logger: config.logger,
+      clock: config.clock,
+    });
+    const scopedManualRefreshService = new ManualRefreshService({
+      accountRepository: scopedRepositories.accountRepository,
+      jobRepository: scopedRepositories.jobRepository,
+      jobQueue,
+      statusService: scopedStatusService,
+      config,
+      clock: config.clock,
+    });
+    const scopedUiDashboardService = new UiDashboardService({
+      accountRepository: scopedRepositories.accountRepository,
+      sheetSnapshotRepository: scopedRepositories.sheetSnapshotRepository,
+      clock: config.clock,
+    });
+    const scopedServices: UserScopedServices = {
+      ...scopedRepositories,
+      sheetGateway: scopedSheetGateway,
+      statusService: scopedStatusService,
+      refreshOrchestrator: scopedRefreshOrchestrator,
+      manualRefreshService: scopedManualRefreshService,
+      uiDashboardService: scopedUiDashboardService,
+    };
+    scopedServiceCache.set(userId, scopedServices);
+    return scopedServices;
+  };
+
+  jobQueue = new JobQueue({
+    concurrency: config.maxConcurrentJobs,
+    processJob: (job) => getScopedServices(job.ownerUserId).refreshOrchestrator.processJob(job),
+    logger: config.logger,
+  });
 
   if (config.seedDemoData) {
+    const bootstrapOwnerId = await resolveBootstrapAdminUserId(supabaseClient, config);
     await seedDemoData({
-      accountRepository: repositories.accountRepository,
+      accountRepository: repositories.forUser(bootstrapOwnerId).accountRepository,
       clock: config.clock,
+      ownerUserId: bootstrapOwnerId,
       overwrite: false,
     });
   }
@@ -246,8 +357,6 @@ export async function createApp(overrides: AppOverrides = {}): Promise<AppInstan
     sheetGateway,
     clock: config.clock,
   });
-  const normalizationService = createNormalizationService({ clock: config.clock });
-  const platformRegistry = createPlatformRegistry({ fixturesDir: config.fixturesDir });
   const refreshOrchestrator = new RefreshOrchestrator({
     accountRepository: repositories.accountRepository,
     jobRepository: repositories.jobRepository,
@@ -259,11 +368,6 @@ export async function createApp(overrides: AppOverrides = {}): Promise<AppInstan
     logger: config.logger,
     clock: config.clock,
   });
-  const jobQueue = new JobQueue({
-    concurrency: config.maxConcurrentJobs,
-    processJob: (job) => refreshOrchestrator.processJob(job),
-    logger: config.logger,
-  });
   const manualRefreshService = new ManualRefreshService({
     accountRepository: repositories.accountRepository,
     jobRepository: repositories.jobRepository,
@@ -273,10 +377,9 @@ export async function createApp(overrides: AppOverrides = {}): Promise<AppInstan
     clock: config.clock,
   });
   const scheduledSyncService = new ScheduledSyncService({
-    accountRepository: repositories.accountRepository,
-    jobRepository: repositories.jobRepository,
+    systemOwnershipRepository: repositories.systemOwnershipRepository,
+    getOwnerServices: getScopedServices,
     jobQueue,
-    statusService,
     clock: config.clock,
   });
   const schedulerService = new SchedulerService({
@@ -296,12 +399,18 @@ export async function createApp(overrides: AppOverrides = {}): Promise<AppInstan
     clock: config.clock,
   });
 
-  await statusService.bootstrapAccountSnapshots();
+  const activeOwnerIds = new Set(
+    (await repositories.systemOwnershipRepository.listActiveAccountsWithOwners()).map(
+      (account) => account.ownerUserId,
+    ),
+  );
+  for (const ownerUserId of activeOwnerIds) {
+    await getScopedServices(ownerUserId).statusService.bootstrapAccountSnapshots();
+  }
   await recoverJobs({
-    accountRepository: repositories.accountRepository,
-    jobRepository: repositories.jobRepository,
+    systemOwnershipRepository: repositories.systemOwnershipRepository,
+    getOwnerServices: getScopedServices,
     jobQueue,
-    statusService,
     clock: config.clock,
   });
 
@@ -318,6 +427,7 @@ export async function createApp(overrides: AppOverrides = {}): Promise<AppInstan
     schedulerService,
     uiDashboardService,
     userApprovalService,
+    forUser: getScopedServices,
   };
 
   const fastify = Fastify({

@@ -16,6 +16,8 @@ import type { SchedulerService } from '../services/scheduler-service.ts';
 import type { StatusService } from '../services/status-service.ts';
 import type { UiDashboardService } from '../services/ui-dashboard-service.ts';
 import type { UserApprovalService } from '../services/user-approval-service.ts';
+import type { AccountConfig } from './account-config.ts';
+import type { Job, JobStatus } from './job.ts';
 
 export type { AppConfig, ConfigOverrides } from '../config.ts';
 
@@ -31,6 +33,29 @@ export interface RuntimeRepositories {
   sheetSnapshotRepository: SheetSnapshotRepository;
   userRepository: UserProfileRepository;
   auditEventRepository: AuditEventRepository;
+  systemOwnershipRepository: SystemOwnershipRepository;
+  forUser(userId: string): UserScopedRepositories;
+}
+
+export interface UserScopedRepositories {
+  accountRepository: AccountConfigRepository;
+  jobRepository: JobRepository;
+  rawRecordRepository: RawRecordRepository;
+  normalizedRecordRepository: NormalizedRecordRepository;
+  sheetSnapshotRepository: SheetSnapshotRepository;
+}
+
+export interface SystemOwnershipRepository {
+  listActiveAccountsWithOwners(): Promise<AccountConfig[]>;
+  listJobsByStatusesAcrossOwners(statuses: JobStatus[]): Promise<Job[]>;
+}
+
+export interface UserScopedServices extends UserScopedRepositories {
+  sheetGateway: FileSheetGateway;
+  statusService: StatusService;
+  refreshOrchestrator: RefreshOrchestrator;
+  manualRefreshService: ManualRefreshService;
+  uiDashboardService: UiDashboardService;
 }
 
 export interface Services extends RuntimeRepositories {
@@ -45,4 +70,5 @@ export interface Services extends RuntimeRepositories {
   schedulerService: SchedulerService;
   uiDashboardService: UiDashboardService;
   userApprovalService: UserApprovalService;
+  forUser(userId: string): UserScopedServices;
 }

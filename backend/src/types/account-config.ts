@@ -5,6 +5,7 @@ export type RefreshStatus = 'idle' | 'queued' | 'running' | 'success' | 'error';
 
 export interface AccountConfig {
   id: string;
+  ownerUserId: string;
   clientName: string;
   platform: Platform;
   accountId: string;

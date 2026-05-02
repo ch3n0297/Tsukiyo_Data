@@ -24,6 +24,7 @@ test("manual refresh rejects oversized request bodies with 413", async () => {
       baseUrl,
       pathName: "/api/v1/refresh-jobs/manual",
       body: {
+        owner_user_id: "11111111-1111-4111-8111-111111111111",
         platform: "instagram",
         account_id: "ig-large-1",
         refresh_days: 7,
