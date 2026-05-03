@@ -72,9 +72,6 @@ export async function signUpWithSupabase(
   try {
     await registerUser({
       display_name: displayName,
-      email,
-      external_user_id: data.user.id,
-      password,
     });
   } catch (serverError) {
     await signOutWithSupabase().catch(() => undefined);
@@ -112,7 +109,7 @@ export async function getSupabaseCurrentUser(): Promise<PublicUser | null> {
   }
 }
 
-// === 舊版 HTTP API 函數（非 Supabase 模式保留）===
+// === Backend API helpers used by the Supabase Auth runtime flow ===
 
 export function getCurrentUser(options?: RequestJsonOptions) {
   return requestJson("/api/v1/auth/me", options);
@@ -120,37 +117,6 @@ export function getCurrentUser(options?: RequestJsonOptions) {
 
 export function registerUser(body: unknown, options?: RequestJsonOptions) {
   return requestJson("/api/v1/auth/register", {
-    ...options,
-    body,
-    method: "POST",
-  });
-}
-
-export function loginUser(body: unknown, options?: RequestJsonOptions) {
-  return requestJson("/api/v1/auth/login", {
-    ...options,
-    body,
-    method: "POST",
-  });
-}
-
-export function logoutUser(options?: RequestJsonOptions) {
-  return requestJson("/api/v1/auth/logout", {
-    ...options,
-    method: "POST",
-  });
-}
-
-export function requestPasswordReset(body: unknown, options?: RequestJsonOptions) {
-  return requestJson("/api/v1/auth/forgot-password", {
-    ...options,
-    body,
-    method: "POST",
-  });
-}
-
-export function resetPassword(body: unknown, options?: RequestJsonOptions) {
-  return requestJson("/api/v1/auth/reset-password", {
     ...options,
     body,
     method: "POST",

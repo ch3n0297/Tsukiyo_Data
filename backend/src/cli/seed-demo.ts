@@ -2,8 +2,9 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "../config.ts";
-import { FileStore } from "../lib/fs-store.ts";
-import { AccountConfigRepository } from "../repositories/account-config-repository.ts";
+import { createSupabaseClient } from "../lib/supabase-client.ts";
+import { SupabaseAccountConfigRepository } from "../repositories/supabase/account-config-repository.ts";
+import type { AccountConfigRepository } from "../repositories/account-config-repository.ts";
 import type { AccountConfig } from "../types/account-config.ts";
 
 const DEMO_REFRESH_DAYS = 90;
@@ -80,11 +81,56 @@ export async function seedDemoData({ accountRepository, clock, overwrite = false
   return demoAccounts;
 }
 
+async function findBootstrapAdminUserId({
+  bootstrapAdminEmail,
+  supabaseClient,
+}: {
+  bootstrapAdminEmail: string;
+  supabaseClient: ReturnType<typeof createSupabaseClient>;
+}): Promise<string | null> {
+  const normalizedEmail = bootstrapAdminEmail.trim().toLowerCase();
+  const perPage = 1000;
+
+  for (let page = 1; ; page += 1) {
+    const { data, error } = await supabaseClient.auth.admin.listUsers({
+      page,
+      perPage,
+    });
+    if (error) {
+      throw error;
+    }
+
+    const owner = data.users.find(
+      (user) => user.email?.trim().toLowerCase() === normalizedEmail,
+    );
+    if (owner) {
+      return owner.id;
+    }
+    if (data.users.length < perPage) {
+      return null;
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const config = loadConfig();
-  const store = new FileStore(config.dataDir);
-  await store.init(["account-configs"]);
-  const accountRepository = new AccountConfigRepository(store);
+  if (!config.supabaseUrl || !config.supabaseServiceRoleKey) {
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured.");
+  }
+  if (!config.bootstrapAdminEmail) {
+    throw new Error("BOOTSTRAP_ADMIN_EMAIL must be configured before seeding demo accounts.");
+  }
+
+  const supabaseClient = createSupabaseClient(config.supabaseUrl, config.supabaseServiceRoleKey);
+  const ownerId = await findBootstrapAdminUserId({
+    bootstrapAdminEmail: config.bootstrapAdminEmail,
+    supabaseClient,
+  });
+  if (!ownerId) {
+    throw new Error("Bootstrap admin user must exist before seeding demo accounts.");
+  }
+
+  const accountRepository = new SupabaseAccountConfigRepository(supabaseClient, ownerId);
   const accounts = await seedDemoData({
     accountRepository,
     clock: config.clock,

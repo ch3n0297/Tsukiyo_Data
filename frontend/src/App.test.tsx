@@ -1,7 +1,18 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, expect, test } from "vitest";
-import { vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import App from "./App";
+
+const mockAuth = vi.hoisted(() => ({
+  getSession: vi.fn(),
+  signInWithPassword: vi.fn(),
+  signOut: vi.fn(),
+}));
+
+vi.mock("./lib/supabase-client", () => ({
+  supabase: {
+    auth: mockAuth,
+  },
+}));
 
 function createJsonResponse(status: number, payload: unknown) {
   return new Response(JSON.stringify(payload), {
@@ -87,15 +98,40 @@ const ACCOUNT_DETAIL_RESPONSE = {
   },
 };
 
+function toSupabaseUser(user = ADMIN_USER) {
+  return {
+    id: user.id,
+    email: user.email,
+    user_metadata: { name: user.displayName },
+    app_metadata: { role: user.role, status: user.status },
+  };
+}
+
+function mockLoggedOutSession() {
+  mockAuth.getSession.mockResolvedValue({
+    data: { session: null },
+    error: null,
+  });
+}
+
+function mockActiveSession() {
+  mockAuth.getSession.mockResolvedValue({
+    data: { session: { access_token: "signed-jwt" } },
+    error: null,
+  });
+}
+
 afterEach(() => {
-  vi.restoreAllMocks();
+  vi.clearAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   window.history.replaceState({}, "", "/");
 });
 
 // ── AC-01: Design System 基礎 ─────────────────────────────────────────────
 
 test("renders login form when there is no active session", async () => {
+  mockLoggedOutSession();
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
@@ -120,15 +156,15 @@ test("renders login form when there is no active session", async () => {
 });
 
 test("protected routes preserve a safe redirect target through login", async () => {
+  mockLoggedOutSession();
+  mockAuth.signInWithPassword.mockResolvedValue({
+    data: { user: toSupabaseUser() },
+    error: null,
+  });
+  mockAuth.signOut.mockResolvedValue({ error: null });
+
   const fetchMock = vi.fn(async (url: string, options: RequestInit = {}) => {
     if (url === "/api/v1/auth/me") {
-      return createJsonResponse(401, {
-        error: "AUTH_REQUIRED",
-        system_message: "請先登入後再存取此功能。",
-      });
-    }
-    if (url === "/api/v1/auth/login") {
-      expect(options.method).toBe("POST");
       return createJsonResponse(200, { user: ADMIN_USER });
     }
     if (url === "/health") return createJsonResponse(200, HEALTH_OK);
@@ -166,6 +202,7 @@ test("protected routes preserve a safe redirect target through login", async () 
 });
 
 test("login ignores external redirect targets for active sessions", async () => {
+  mockActiveSession();
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
@@ -186,6 +223,7 @@ test("login ignores external redirect targets for active sessions", async () => 
 });
 
 test("auth layout brand area is always dark (#0A0A0A)", async () => {
+  mockLoggedOutSession();
   vi.stubGlobal(
     "fetch",
     vi.fn(async () =>
@@ -208,6 +246,7 @@ test("auth layout brand area is always dark (#0A0A0A)", async () => {
 // ── AC-03: Dashboard + Sidebar ────────────────────────────────────────────
 
 test("authenticated admin sees dashboard and admin sidebar nav", async () => {
+  mockActiveSession();
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
@@ -233,6 +272,7 @@ test("authenticated admin sees dashboard and admin sidebar nav", async () => {
 });
 
 test("admin can approve pending users at /admin/pending", async () => {
+  mockActiveSession();
   const fetchMock = vi.fn(async (url: string, options: RequestInit = {}) => {
     if (url === "/api/v1/auth/me") return createJsonResponse(200, { user: ADMIN_USER });
     if (url === "/health") return createJsonResponse(200, HEALTH_OK);
@@ -290,6 +330,7 @@ test("admin can approve pending users at /admin/pending", async () => {
 });
 
 test("admin pending-user errors stay inside the pending-users panel", async () => {
+  mockActiveSession();
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {

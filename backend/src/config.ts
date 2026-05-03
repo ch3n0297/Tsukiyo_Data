@@ -6,18 +6,11 @@ import type { Logger } from "./lib/logger.ts";
 export interface AppConfig {
   host: string;
   port: number;
-  dataDir: string;
   fixturesDir: string;
   sharedSecret: string;
   allowedClientIds: string[];
   signatureTtlMs: number;
   maxRequestBodyBytes: number;
-  sessionCookieName: string;
-  sessionTtlMs: number;
-  sessionCookieSecure: boolean;
-  sessionCookieSameSite: string;
-  sessionRefreshThresholdMs?: number;
-  passwordResetTtlMs: number;
   bootstrapAdminEmail: string | undefined;
   bootstrapAdminPassword: string | undefined;
   bootstrapAdminName: string;
@@ -35,7 +28,6 @@ export interface AppConfig {
   supabaseUrl: string;
   supabaseServiceRoleKey: string;
   supabaseAnonKey: string;
-  useSupabaseStorage: boolean;
 }
 
 export type ConfigOverrides = Partial<AppConfig> & {
@@ -46,24 +38,6 @@ export type ConfigOverrides = Partial<AppConfig> & {
 function readNumber(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function readBoolean(value: string | undefined, fallback = false): boolean {
-  if (typeof value !== "string") {
-    return fallback;
-  }
-
-  const normalized = value.trim().toLowerCase();
-
-  if (["1", "true", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return false;
-  }
-
-  return fallback;
 }
 
 function readTrimmedString(value: string | undefined): string | undefined {
@@ -139,7 +113,6 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
   return {
     host: overrides.host ?? process.env.HOST ?? "127.0.0.1",
     port: overrides.port ?? readNumber(process.env.PORT, 3000),
-    dataDir: overrides.dataDir ?? process.env.DATA_DIR ?? path.join(rootDir, "data"),
     fixturesDir:
       overrides.fixturesDir ??
       process.env.FIXTURES_DIR ??
@@ -151,21 +124,6 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     maxRequestBodyBytes:
       overrides.maxRequestBodyBytes ??
       readNumber(process.env.MAX_REQUEST_BODY_BYTES, 1024 * 1024),
-    sessionCookieName:
-      overrides.sessionCookieName ??
-      readTrimmedString(process.env.SESSION_COOKIE_NAME) ??
-      "social_data_session",
-    sessionTtlMs:
-      overrides.sessionTtlMs ?? readNumber(process.env.SESSION_TTL_MS, 7 * 24 * 60 * 60 * 1000),
-    sessionCookieSecure:
-      overrides.sessionCookieSecure ?? readBoolean(process.env.SESSION_COOKIE_SECURE, false),
-    sessionCookieSameSite:
-      overrides.sessionCookieSameSite ??
-      readTrimmedString(process.env.SESSION_COOKIE_SAME_SITE) ??
-      "Lax",
-    passwordResetTtlMs:
-      overrides.passwordResetTtlMs ??
-      readNumber(process.env.PASSWORD_RESET_TTL_MS, 60 * 60 * 1000),
     bootstrapAdminEmail:
       overrides.bootstrapAdminEmail ?? readTrimmedString(process.env.BOOTSTRAP_ADMIN_EMAIL),
     bootstrapAdminPassword:
@@ -202,7 +160,5 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
       readTrimmedString(process.env.SUPABASE_SERVICE_ROLE_KEY) ??
       '',
     supabaseAnonKey: overrides.supabaseAnonKey ?? readTrimmedString(process.env.SUPABASE_ANON_KEY) ?? '',
-    useSupabaseStorage:
-      overrides.useSupabaseStorage ?? readBoolean(process.env.USE_SUPABASE_STORAGE, false),
   };
 }

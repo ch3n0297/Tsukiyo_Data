@@ -6,16 +6,8 @@ export type { RefreshStatus, AccountConfig } from './account-config.ts';
 export type { JobStatus, TriggerType, RequestSource, Job } from './job.ts';
 export type { DataStatus, RawRecord, NormalizedRecord } from './record.ts';
 export type { UserRole, UserStatus, User, PublicUser } from './user.ts';
-export type { Session } from './session.ts';
 export type { SheetStatusSnapshot, SheetOutputRow, SheetOutputSnapshot } from './sheet.ts';
-export type { OutboxMessageType, OutboxMessage } from './outbox.ts';
-export type { PasswordResetToken } from './password-reset.ts';
-export type {
-  Logger,
-  CollectionUpdater,
-  MultiCollectionUpdater,
-  FileStore,
-} from './infra.ts';
+export type { Logger } from './infra.ts';
 export type {
   FetchAccountContentParams,
   PlatformAdapter,

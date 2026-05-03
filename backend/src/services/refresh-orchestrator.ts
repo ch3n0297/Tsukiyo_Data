@@ -208,46 +208,7 @@ export class RefreshOrchestrator {
     rawRecords: StoredRawRecord[],
     normalizedRecords: NormalizedRecord[]
   ): Promise<void> {
-    const rawStore = (this.rawRecordRepository as { store?: RawRecordRepository["store"] }).store;
-    const normalizedStore = (
-      this.normalizedRecordRepository as { store?: NormalizedRecordRepository["store"] }
-    ).store;
-
-    if (
-      !rawStore ||
-      !normalizedStore ||
-      rawStore !== normalizedStore ||
-      typeof rawStore.updateCollections !== "function"
-    ) {
-      await this.rawRecordRepository.appendMany(rawRecords);
-      await this.normalizedRecordRepository.replaceForAccount(accountKey, normalizedRecords);
-      return;
-    }
-    const store = rawStore;
-
-    type RefreshCollections = {
-      [key: string]: unknown[];
-    };
-
-    const rawCol = this.rawRecordRepository.collection;
-    const normCol = this.normalizedRecordRepository.collection;
-
-    await store.updateCollections<RefreshCollections>(
-      [rawCol, normCol],
-      (collections) => {
-        const nextRawRecords = collections[rawCol] as StoredRawRecord[];
-        const nextNormalizedRecords = (collections[normCol] as NormalizedRecord[])
-          .filter((record) => record.accountKey !== accountKey);
-
-        nextRawRecords.push(...rawRecords);
-        nextNormalizedRecords.push(...normalizedRecords);
-
-        return {
-          ...collections,
-          [rawCol]: nextRawRecords,
-          [normCol]: nextNormalizedRecords,
-        };
-      },
-    );
+    await this.rawRecordRepository.appendMany(rawRecords);
+    await this.normalizedRecordRepository.replaceForAccount(accountKey, normalizedRecords);
   }
 }

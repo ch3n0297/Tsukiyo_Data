@@ -1,30 +1,24 @@
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import fastifyCors from "@fastify/cors";
-import { loadConfig } from "./config.ts";
-import type { AppConfig, ConfigOverrides, Services } from "./types/app.ts";
 import { FileSheetGateway } from "./adapters/sheets/file-sheet-gateway.ts";
 import { createPlatformRegistry } from "./adapters/platforms/platform-registry.ts";
+import { loadConfig } from "./config.ts";
+import type { AppConfig, ConfigOverrides } from "./config.ts";
 import { toErrorResponse } from "./lib/errors.ts";
-import { FileStore } from "./lib/fs-store.ts";
-import { createSupabaseClient } from "./lib/supabase-client.ts";
 import { sendJson } from "./lib/http.ts";
-import { AccountConfigRepository } from "./repositories/account-config-repository.ts";
-import { JobRepository } from "./repositories/job-repository.ts";
-import { OutboxMessageRepository } from "./repositories/outbox-message-repository.ts";
-import { NormalizedRecordRepository } from "./repositories/normalized-record-repository.ts";
-import { PasswordResetTokenRepository } from "./repositories/password-reset-token-repository.ts";
-import { RawRecordRepository } from "./repositories/raw-record-repository.ts";
-import { SessionRepository } from "./repositories/session-repository.ts";
-import { SheetSnapshotRepository } from "./repositories/sheet-snapshot-repository.ts";
-import { UserRepository } from "./repositories/user-repository.ts";
-import { UserApprovalRepository } from "./repositories/user-approval-repository.ts";
-import { SupabaseAccountConfigRepository } from "./repositories/supabase/account-config-repository.ts";
-import { SupabaseJobRepository } from "./repositories/supabase/job-repository.ts";
-import { SupabaseRawRecordRepository } from "./repositories/supabase/raw-record-repository.ts";
-import { SupabaseNormalizedRecordRepository } from "./repositories/supabase/normalized-record-repository.ts";
-import { SupabaseSheetSnapshotRepository } from "./repositories/supabase/sheet-snapshot-repository.ts";
+import { createSupabaseClient } from "./lib/supabase-client.ts";
+import type { SupabaseClient } from "./lib/supabase-client.ts";
 import { createRequireAuth } from "./middleware/require-auth.ts";
+import { SupabaseAccountConfigRepository } from "./repositories/supabase/account-config-repository.ts";
+import { SupabaseAuditEventRepository } from "./repositories/supabase/audit-event-repository.ts";
+import { SupabaseJobRepository } from "./repositories/supabase/job-repository.ts";
+import { SupabaseNormalizedRecordRepository } from "./repositories/supabase/normalized-record-repository.ts";
+import { SupabaseRawRecordRepository } from "./repositories/supabase/raw-record-repository.ts";
+import { SupabaseSheetSnapshotRepository } from "./repositories/supabase/sheet-snapshot-repository.ts";
+import { SupabaseUserProfileRepository } from "./repositories/supabase/user-repository.ts";
+import type { JobRepository as JR } from "./repositories/job-repository.ts";
+import type { AccountConfigRepository as ACR } from "./repositories/account-config-repository.ts";
 import {
   handleApproveUserRoute,
   handleCurrentUserRoute,
@@ -44,17 +38,16 @@ import { seedDemoData } from "./cli/seed-demo.ts";
 import { JobQueue } from "./services/job-queue.ts";
 import { ManualRefreshService } from "./services/manual-refresh-service.ts";
 import { createNormalizationService } from "./services/normalization-service.ts";
-import { PasswordResetService } from "./services/password-reset-service.ts";
 import { RefreshOrchestrator } from "./services/refresh-orchestrator.ts";
 import { ScheduledSyncService } from "./services/scheduled-sync-service.ts";
 import { SchedulerService } from "./services/scheduler-service.ts";
 import { StatusService } from "./services/status-service.ts";
 import { UiDashboardService } from "./services/ui-dashboard-service.ts";
 import { UserApprovalService } from "./services/user-approval-service.ts";
-import { UserAuthService } from "./services/user-auth-service.ts";
+import type { RuntimeRepositories, Services } from "./types/app.ts";
 import type { Job } from "./types/job.ts";
-import type { AccountConfigRepository as ACR } from "./repositories/account-config-repository.ts";
-import type { JobRepository as JR } from "./repositories/job-repository.ts";
+
+const MIGRATION_SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 export interface AppInstance {
   config: AppConfig;
@@ -64,6 +57,12 @@ export interface AppInstance {
   start(): Promise<{ host: string; port: number }>;
   stop(): Promise<void>;
 }
+
+export type AppOverrides = ConfigOverrides & {
+  supabaseClient?: SupabaseClient;
+  repositories?: RuntimeRepositories;
+  storageUserId?: string;
+};
 
 interface RecoverJobsParams {
   accountRepository: ACR;
@@ -127,12 +126,22 @@ function createCorsOriginResolver(config: AppConfig) {
   };
 }
 
-const MIGRATION_SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000001';
+function createConfiguredSupabaseClient(config: AppConfig): SupabaseClient {
+  if (!config.supabaseUrl || !config.supabaseServiceRoleKey) {
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured.");
+  }
+  return createSupabaseClient(config.supabaseUrl, config.supabaseServiceRoleKey);
+}
 
-async function resolveSupabaseStorageUserId(
-  supabaseClient: ReturnType<typeof createSupabaseClient>,
+async function resolveStorageUserId(
+  supabaseClient: SupabaseClient,
   config: AppConfig,
+  overrideUserId?: string,
 ): Promise<string> {
+  if (overrideUserId) {
+    return overrideUserId;
+  }
+
   if (!config.bootstrapAdminEmail || !config.bootstrapAdminPassword) {
     if (config.seedDemoData) {
       throw new Error(
@@ -153,7 +162,6 @@ async function resolveSupabaseStorageUserId(
   const bootstrapAdmin = data.users.find(
     (user) => user.email?.trim().toLowerCase() === config.bootstrapAdminEmail?.trim().toLowerCase(),
   );
-
   const appMetadata = { role: "admin", status: "active" };
   const userMetadata = { name: config.bootstrapAdminName };
 
@@ -174,7 +182,6 @@ async function resolveSupabaseStorageUserId(
     if (updateError) {
       throw updateError;
     }
-
     return bootstrapAdmin.id;
   }
 
@@ -195,53 +202,32 @@ async function resolveSupabaseStorageUserId(
   return created.user.id;
 }
 
-export async function createApp(overrides: ConfigOverrides = {}): Promise<AppInstance> {
-  const config = loadConfig(overrides);
-  const store = new FileStore(config.dataDir);
-
-  await store.init([
-    "account-configs",
-    "jobs",
-    "outbox-messages",
-    "password-reset-tokens",
-    "raw-platform-records",
-    "normalized-content-records",
-    "sessions",
-    "sheet-status",
-    "sheet-output",
-    "users",
-  ]);
-
-  const fileStoreRepos = {
-    accountRepository: new AccountConfigRepository(store),
-    jobRepository: new JobRepository(store),
-    outboxMessageRepository: new OutboxMessageRepository(store),
-    rawRecordRepository: new RawRecordRepository(store),
-    normalizedRecordRepository: new NormalizedRecordRepository(store),
-    passwordResetTokenRepository: new PasswordResetTokenRepository(store),
-    sheetSnapshotRepository: new SheetSnapshotRepository(store),
-    sessionRepository: new SessionRepository(store),
-    userRepository: new UserRepository(store),
+function createSupabaseRepositories(
+  supabaseClient: SupabaseClient,
+  storageUserId: string,
+  clock: () => Date,
+): RuntimeRepositories {
+  return {
+    accountRepository: new SupabaseAccountConfigRepository(supabaseClient, storageUserId),
+    auditEventRepository: new SupabaseAuditEventRepository(supabaseClient),
+    jobRepository: new SupabaseJobRepository(supabaseClient, storageUserId),
+    rawRecordRepository: new SupabaseRawRecordRepository(supabaseClient, storageUserId),
+    normalizedRecordRepository: new SupabaseNormalizedRecordRepository(supabaseClient, storageUserId),
+    sheetSnapshotRepository: new SupabaseSheetSnapshotRepository(supabaseClient, storageUserId),
+    userRepository: new SupabaseUserProfileRepository(supabaseClient, { clock }),
   };
-  const userApprovalRepository = new UserApprovalRepository(store);
+}
 
-  let repositories = fileStoreRepos;
-
-  // supabaseClient 提升到外層作用域，供 repositories 和 requireAuth 共用（避免重複建立）
-  const supabaseClient = config.useSupabaseStorage
-    ? createSupabaseClient(config.supabaseUrl, config.supabaseServiceRoleKey)
-    : null;
-
-  if (supabaseClient) {
-    const userId = await resolveSupabaseStorageUserId(supabaseClient, config);
-    Object.assign(repositories, {
-      accountRepository: new SupabaseAccountConfigRepository(supabaseClient, userId),
-      jobRepository: new SupabaseJobRepository(supabaseClient, userId),
-      rawRecordRepository: new SupabaseRawRecordRepository(supabaseClient, userId),
-      normalizedRecordRepository: new SupabaseNormalizedRecordRepository(supabaseClient, userId),
-      sheetSnapshotRepository: new SupabaseSheetSnapshotRepository(supabaseClient, userId),
-    });
-  }
+export async function createApp(overrides: AppOverrides = {}): Promise<AppInstance> {
+  const config = loadConfig(overrides);
+  const supabaseClient = overrides.supabaseClient ?? createConfiguredSupabaseClient(config);
+  const storageUserId = await resolveStorageUserId(
+    supabaseClient,
+    config,
+    overrides.storageUserId,
+  );
+  const repositories =
+    overrides.repositories ?? createSupabaseRepositories(supabaseClient, storageUserId, config.clock);
 
   if (config.seedDemoData) {
     await seedDemoData({
@@ -298,32 +284,18 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     intervalMs: config.scheduleIntervalMs,
     logger: config.logger,
   });
-  const userAuthService = new UserAuthService({
-    userRepository: repositories.userRepository,
-    sessionRepository: repositories.sessionRepository,
-    clock: config.clock,
-    config,
-  });
-  const userApprovalService = new UserApprovalService({
-    userApprovalRepository,
-    supabaseClient,
-    clock: config.clock,
-  });
-  const passwordResetService = new PasswordResetService({
-    userRepository: repositories.userRepository,
-    sessionRepository: repositories.sessionRepository,
-    passwordResetTokenRepository: repositories.passwordResetTokenRepository,
-    outboxMessageRepository: repositories.outboxMessageRepository,
-    clock: config.clock,
-    config,
-  });
   const uiDashboardService = new UiDashboardService({
     accountRepository: repositories.accountRepository,
     sheetSnapshotRepository: repositories.sheetSnapshotRepository,
     clock: config.clock,
   });
+  const userApprovalService = new UserApprovalService({
+    userRepository: repositories.userRepository,
+    auditEventRepository: repositories.auditEventRepository,
+    supabaseClient,
+    clock: config.clock,
+  });
 
-  await userAuthService.seedBootstrapAdmin();
   await statusService.bootstrapAccountSnapshots();
   await recoverJobs({
     accountRepository: repositories.accountRepository,
@@ -342,12 +314,10 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     refreshOrchestrator,
     jobQueue,
     manualRefreshService,
-    passwordResetService,
     scheduledSyncService,
     schedulerService,
     uiDashboardService,
     userApprovalService,
-    userAuthService,
   };
 
   const fastify = Fastify({
@@ -380,21 +350,17 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     });
   });
 
-  const requireAuth = supabaseClient ? createRequireAuth(supabaseClient) : null;
+  const requireAuth = createRequireAuth(supabaseClient);
 
   fastify.get("/health", async (request, reply) => {
     await handleHealthRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.get("/api/v1/ui/accounts", {
-    preHandler: requireAuth ?? undefined,
-  }, async (request, reply) => {
+  fastify.get("/api/v1/ui/accounts", { preHandler: requireAuth }, async (request, reply) => {
     await handleUiAccountsRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.get("/api/v1/ui/accounts/:platform/:accountId", {
-    preHandler: requireAuth ?? undefined,
-  }, async (request, reply) => {
+  fastify.get("/api/v1/ui/accounts/:platform/:accountId", { preHandler: requireAuth }, async (request, reply) => {
     await handleUiAccountDetailRoute({
       req: request,
       res: reply,
@@ -404,7 +370,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     });
   });
 
-  fastify.post("/api/v1/auth/register", async (request, reply) => {
+  fastify.post("/api/v1/auth/register", { preHandler: requireAuth }, async (request, reply) => {
     await handleRegisterRoute({ req: request, res: reply, services, config });
   });
 
@@ -416,9 +382,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     await handleLogoutRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.get("/api/v1/auth/me", {
-    preHandler: requireAuth ?? undefined,
-  }, async (request, reply) => {
+  fastify.get("/api/v1/auth/me", { preHandler: requireAuth }, async (request, reply) => {
     await handleCurrentUserRoute({ req: request, res: reply, services, config });
   });
 
@@ -430,15 +394,11 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     await handleResetPasswordRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.get("/api/v1/admin/pending-users", {
-    preHandler: requireAuth ?? undefined,
-  }, async (request, reply) => {
+  fastify.get("/api/v1/admin/pending-users", { preHandler: requireAuth }, async (request, reply) => {
     await handlePendingUsersRoute({ req: request, res: reply, services, config });
   });
 
-  fastify.post("/api/v1/admin/pending-users/:userId/approve", {
-    preHandler: requireAuth ?? undefined,
-  }, async (request, reply) => {
+  fastify.post("/api/v1/admin/pending-users/:userId/approve", { preHandler: requireAuth }, async (request, reply) => {
     await handleApproveUserRoute({
       req: request,
       res: reply,
@@ -448,9 +408,7 @@ export async function createApp(overrides: ConfigOverrides = {}): Promise<AppIns
     });
   });
 
-  fastify.post("/api/v1/admin/pending-users/:userId/reject", {
-    preHandler: requireAuth ?? undefined,
-  }, async (request, reply) => {
+  fastify.post("/api/v1/admin/pending-users/:userId/reject", { preHandler: requireAuth }, async (request, reply) => {
     await handleRejectUserRoute({
       req: request,
       res: reply,
