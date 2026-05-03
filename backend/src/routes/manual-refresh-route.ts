@@ -1,6 +1,7 @@
 import { toErrorResponse } from "../lib/errors.ts";
 import { readJsonRequest, sendJson } from "../lib/http.ts";
 import { verifySignedRequest } from "../services/auth-service.ts";
+import { validateManualRefreshPayload } from "../services/validation-service.ts";
 import type { RouteContext } from "../types/route.ts";
 
 export async function handleManualRefreshRoute({ req, res, services, config }: RouteContext): Promise<void> {
@@ -17,7 +18,10 @@ export async function handleManualRefreshRoute({ req, res, services, config }: R
       clock: config.clock,
     });
 
-    const job = await services.manualRefreshService.enqueueManualRefresh({
+    const payload = validateManualRefreshPayload(body);
+    await services.userApprovalService.requireActiveUserById(payload.ownerUserId);
+
+    const job = await services.forUser(payload.ownerUserId).manualRefreshService.enqueueManualRefresh({
       payload: body,
       clientId: auth.clientId,
     });

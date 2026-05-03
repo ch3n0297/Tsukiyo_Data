@@ -18,6 +18,8 @@ import type { RawRecord, NormalizedRecord } from "../src/types/record.ts";
 import type { SheetOutputSnapshot, SheetStatusSnapshot } from "../src/types/sheet.ts";
 import type { PublicUser, User, UserRole, UserStatus } from "../src/types/user.ts";
 
+const DEFAULT_OWNER_USER_ID = "11111111-1111-4111-8111-111111111111";
+
 interface AuthRecord {
   id: string;
   email: string;
@@ -144,18 +146,48 @@ export class TestAuthStore {
 }
 
 class MemoryAccountRepository {
-  readonly accounts: AccountConfig[] = [];
+  readonly ownerUserId?: string;
+  readonly accounts: AccountConfig[];
+
+  constructor(ownerUserId?: string, accounts: AccountConfig[] = []) {
+    this.ownerUserId = ownerUserId;
+    this.accounts = accounts;
+  }
+
+  forOwner(ownerUserId: string): MemoryAccountRepository {
+    return new MemoryAccountRepository(ownerUserId, this.accounts);
+  }
+
+  #withOwner(record: AccountConfig): AccountConfig {
+    return {
+      ...record,
+      ownerUserId: record.ownerUserId ?? this.ownerUserId ?? DEFAULT_OWNER_USER_ID,
+    };
+  }
+
+  #belongsToOwner(record: AccountConfig): boolean {
+    return !this.ownerUserId || record.ownerUserId === this.ownerUserId;
+  }
 
   async listAll(): Promise<AccountConfig[]> {
-    return this.accounts.map((account) => ({ ...account }));
+    return this.accounts.filter((account) => this.#belongsToOwner(account)).map((account) => ({ ...account }));
   }
 
   async listActive(): Promise<AccountConfig[]> {
-    return this.accounts.filter((account) => account.isActive).map((account) => ({ ...account }));
+    return this.accounts
+      .filter((account) => this.#belongsToOwner(account) && account.isActive)
+      .map((account) => ({ ...account }));
   }
 
   async replaceAll(records: AccountConfig[]): Promise<AccountConfig[]> {
-    this.accounts.splice(0, this.accounts.length, ...records.map((record) => ({ ...record })));
+    const nextRecords = records.map((record) => this.#withOwner(record));
+    if (!this.ownerUserId) {
+      this.accounts.splice(0, this.accounts.length, ...nextRecords);
+      return this.listAll();
+    }
+
+    const otherOwnerRecords = this.accounts.filter((account) => account.ownerUserId !== this.ownerUserId);
+    this.accounts.splice(0, this.accounts.length, ...otherOwnerRecords, ...nextRecords);
     return this.listAll();
   }
 
@@ -164,7 +196,10 @@ class MemoryAccountRepository {
     accountId: string,
   ): Promise<AccountConfig | undefined> {
     const account = this.accounts.find(
-      (entry) => entry.platform === platform && entry.accountId === accountId,
+      (entry) =>
+        this.#belongsToOwner(entry) &&
+        entry.platform === platform &&
+        entry.accountId === accountId,
     );
     return account ? { ...account } : undefined;
   }
@@ -175,7 +210,10 @@ class MemoryAccountRepository {
   ): Promise<AccountConfig[]> {
     const [platform, accountId] = accountKey.split(":");
     const index = this.accounts.findIndex(
-      (entry) => entry.platform === platform && entry.accountId === accountId,
+      (entry) =>
+        this.#belongsToOwner(entry) &&
+        entry.platform === platform &&
+        entry.accountId === accountId,
     );
     if (index !== -1) {
       this.accounts[index] = {
@@ -188,24 +226,45 @@ class MemoryAccountRepository {
 }
 
 class MemoryJobRepository implements JobRepository {
-  readonly jobs: Job[] = [];
+  readonly ownerUserId?: string;
+  readonly jobs: Job[];
+
+  constructor(ownerUserId?: string, jobs: Job[] = []) {
+    this.ownerUserId = ownerUserId;
+    this.jobs = jobs;
+  }
+
+  forOwner(ownerUserId: string): MemoryJobRepository {
+    return new MemoryJobRepository(ownerUserId, this.jobs);
+  }
+
+  #withOwner(job: Job): Job {
+    return {
+      ...job,
+      ownerUserId: job.ownerUserId ?? this.ownerUserId ?? DEFAULT_OWNER_USER_ID,
+    };
+  }
+
+  #belongsToOwner(job: Job): boolean {
+    return !this.ownerUserId || job.ownerUserId === this.ownerUserId;
+  }
 
   async listAll(): Promise<Job[]> {
-    return this.jobs.map((job) => ({ ...job }));
+    return this.jobs.filter((job) => this.#belongsToOwner(job)).map((job) => ({ ...job }));
   }
 
   async create(job: Job): Promise<Job[]> {
-    this.jobs.push({ ...job });
+    this.jobs.push(this.#withOwner(job));
     return this.listAll();
   }
 
   async findById(jobId: string): Promise<Job | undefined> {
-    const job = this.jobs.find((entry) => entry.id === jobId);
+    const job = this.jobs.find((entry) => this.#belongsToOwner(entry) && entry.id === jobId);
     return job ? { ...job } : undefined;
   }
 
   async updateById(jobId: string, patch: Partial<Job>): Promise<Job | null> {
-    const index = this.jobs.findIndex((entry) => entry.id === jobId);
+    const index = this.jobs.findIndex((entry) => this.#belongsToOwner(entry) && entry.id === jobId);
     if (index === -1) {
       return null;
     }
@@ -218,18 +277,28 @@ class MemoryJobRepository implements JobRepository {
 
   async findActiveByAccountKey(accountKey: string): Promise<Job | undefined> {
     const job = this.jobs.find(
-      (entry) => entry.accountKey === accountKey && ["queued", "running"].includes(entry.status),
+      (entry) =>
+        this.#belongsToOwner(entry) &&
+        entry.accountKey === accountKey &&
+        ["queued", "running"].includes(entry.status),
     );
     return job ? { ...job } : undefined;
   }
 
   async listByStatuses(statuses: JobStatus[]): Promise<Job[]> {
-    return this.jobs.filter((job) => statuses.includes(job.status)).map((job) => ({ ...job }));
+    return this.jobs
+      .filter((job) => this.#belongsToOwner(job) && statuses.includes(job.status))
+      .map((job) => ({ ...job }));
   }
 
   async listRecentBySource(requestSource: string, sinceIso: string): Promise<Job[]> {
     return this.jobs
-      .filter((job) => job.requestSource === requestSource && job.queuedAt >= sinceIso)
+      .filter(
+        (job) =>
+          this.#belongsToOwner(job) &&
+          job.requestSource === requestSource &&
+          job.queuedAt >= sinceIso,
+      )
       .map((job) => ({ ...job }));
   }
 
@@ -238,6 +307,7 @@ class MemoryJobRepository implements JobRepository {
       .filter(
         (entry) =>
           entry.accountKey === accountKey &&
+          this.#belongsToOwner(entry) &&
           entry.triggerType === triggerType &&
           ["queued", "running", "success"].includes(entry.status),
       )
@@ -247,61 +317,124 @@ class MemoryJobRepository implements JobRepository {
 }
 
 class MemoryRawRecordRepository {
-  readonly records: RawRecord[] = [];
+  readonly ownerUserId?: string;
+  readonly records: RawRecord[];
+
+  constructor(ownerUserId?: string, records: RawRecord[] = []) {
+    this.ownerUserId = ownerUserId;
+    this.records = records;
+  }
+
+  forOwner(ownerUserId: string): MemoryRawRecordRepository {
+    return new MemoryRawRecordRepository(ownerUserId, this.records);
+  }
+
+  #belongsToOwner(record: RawRecord): boolean {
+    return !this.ownerUserId || record.ownerUserId === this.ownerUserId;
+  }
 
   async listAll(): Promise<RawRecord[]> {
-    return this.records.map((record) => ({ ...record }));
+    return this.records.filter((record) => this.#belongsToOwner(record)).map((record) => ({ ...record }));
   }
 
   async appendMany(recordsToAdd: RawRecord[]): Promise<RawRecord[]> {
-    this.records.push(...recordsToAdd.map((record) => ({ ...record })));
+    this.records.push(
+      ...recordsToAdd.map((record) => ({
+        ...record,
+        ownerUserId: record.ownerUserId ?? this.ownerUserId ?? DEFAULT_OWNER_USER_ID,
+      })),
+    );
     return this.listAll();
   }
 }
 
 class MemoryNormalizedRecordRepository {
-  readonly records: NormalizedRecord[] = [];
+  readonly ownerUserId?: string;
+  readonly records: NormalizedRecord[];
+
+  constructor(ownerUserId?: string, records: NormalizedRecord[] = []) {
+    this.ownerUserId = ownerUserId;
+    this.records = records;
+  }
+
+  forOwner(ownerUserId: string): MemoryNormalizedRecordRepository {
+    return new MemoryNormalizedRecordRepository(ownerUserId, this.records);
+  }
+
+  #belongsToOwner(record: NormalizedRecord): boolean {
+    return !this.ownerUserId || record.ownerUserId === this.ownerUserId;
+  }
 
   async listAll(): Promise<NormalizedRecord[]> {
-    return this.records.map((record) => ({ ...record }));
+    return this.records.filter((record) => this.#belongsToOwner(record)).map((record) => ({ ...record }));
   }
 
   async replaceForAccount(
     accountKey: string,
     nextRecords: NormalizedRecord[],
   ): Promise<NormalizedRecord[]> {
-    const remaining = this.records.filter((record) => record.accountKey !== accountKey);
+    const remaining = this.records.filter(
+      (record) => !this.#belongsToOwner(record) || record.accountKey !== accountKey,
+    );
     this.records.splice(
       0,
       this.records.length,
       ...remaining,
-      ...nextRecords.map((record) => ({ ...record })),
+      ...nextRecords.map((record) => ({
+        ...record,
+        ownerUserId: record.ownerUserId ?? this.ownerUserId ?? DEFAULT_OWNER_USER_ID,
+      })),
     );
     return this.listAll();
   }
 }
 
 class MemorySheetSnapshotRepository {
-  readonly statuses: SheetStatusSnapshot[] = [];
-  readonly outputs: SheetOutputSnapshot[] = [];
+  readonly ownerUserId?: string;
+  readonly statuses: SheetStatusSnapshot[];
+  readonly outputs: SheetOutputSnapshot[];
+
+  constructor(
+    ownerUserId?: string,
+    statuses: SheetStatusSnapshot[] = [],
+    outputs: SheetOutputSnapshot[] = [],
+  ) {
+    this.ownerUserId = ownerUserId;
+    this.statuses = statuses;
+    this.outputs = outputs;
+  }
+
+  forOwner(ownerUserId: string): MemorySheetSnapshotRepository {
+    return new MemorySheetSnapshotRepository(ownerUserId, this.statuses, this.outputs);
+  }
+
+  #belongsToOwner(record: { ownerUserId?: string }): boolean {
+    return !this.ownerUserId || record.ownerUserId === this.ownerUserId;
+  }
 
   async listStatuses(): Promise<SheetStatusSnapshot[]> {
-    return this.statuses.map((status) => ({ ...status }));
+    return this.statuses.filter((status) => this.#belongsToOwner(status)).map((status) => ({ ...status }));
   }
 
   async listOutputs(): Promise<SheetOutputSnapshot[]> {
-    return this.outputs.map((output) => ({ ...output, rows: [...output.rows] }));
+    return this.outputs
+      .filter((output) => this.#belongsToOwner(output))
+      .map((output) => ({ ...output, rows: [...output.rows] }));
   }
 
   async upsertStatus(snapshot: SheetStatusSnapshot): Promise<SheetStatusSnapshot[]> {
     const key = makeAccountKey(snapshot.platform, snapshot.accountId);
     const index = this.statuses.findIndex(
-      (entry) => makeAccountKey(entry.platform, entry.accountId) === key,
+      (entry) => this.#belongsToOwner(entry) && makeAccountKey(entry.platform, entry.accountId) === key,
     );
+    const ownedSnapshot = {
+      ...snapshot,
+      ownerUserId: snapshot.ownerUserId ?? this.ownerUserId ?? DEFAULT_OWNER_USER_ID,
+    };
     if (index === -1) {
-      this.statuses.push({ ...snapshot });
+      this.statuses.push(ownedSnapshot);
     } else {
-      this.statuses[index] = { ...this.statuses[index], ...snapshot };
+      this.statuses[index] = { ...this.statuses[index], ...ownedSnapshot };
     }
     return this.listStatuses();
   }
@@ -309,12 +442,17 @@ class MemorySheetSnapshotRepository {
   async upsertOutput(snapshot: SheetOutputSnapshot): Promise<SheetOutputSnapshot[]> {
     const key = makeAccountKey(snapshot.platform, snapshot.accountId);
     const index = this.outputs.findIndex(
-      (entry) => makeAccountKey(entry.platform, entry.accountId) === key,
+      (entry) => this.#belongsToOwner(entry) && makeAccountKey(entry.platform, entry.accountId) === key,
     );
+    const ownedSnapshot = {
+      ...snapshot,
+      ownerUserId: snapshot.ownerUserId ?? this.ownerUserId ?? DEFAULT_OWNER_USER_ID,
+      rows: [...snapshot.rows],
+    };
     if (index === -1) {
-      this.outputs.push({ ...snapshot, rows: [...snapshot.rows] });
+      this.outputs.push(ownedSnapshot);
     } else {
-      this.outputs[index] = { ...snapshot, rows: [...snapshot.rows] };
+      this.outputs[index] = ownedSnapshot;
     }
     return this.listOutputs();
   }
@@ -431,15 +569,46 @@ export interface MemoryRepositories extends RuntimeRepositories {
   userRepository: MemoryUserProfileRepository;
 }
 
-function createMemoryRepositories(): MemoryRepositories {
+function createMemoryRepositories(auth: TestAuthStore): MemoryRepositories {
+  const accountRepository = new MemoryAccountRepository();
+  const jobRepository = new MemoryJobRepository();
+  const rawRecordRepository = new MemoryRawRecordRepository();
+  const normalizedRecordRepository = new MemoryNormalizedRecordRepository();
+  const sheetSnapshotRepository = new MemorySheetSnapshotRepository();
+  const activeOwnerIds = (): Set<string> =>
+    new Set(
+      [...auth.users.values()]
+        .filter((user) => user.app_metadata.status === "active")
+        .map((user) => user.id),
+    );
+
   return {
-    accountRepository: new MemoryAccountRepository(),
+    accountRepository,
     auditEventRepository: new MemoryAuditEventRepository(),
-    jobRepository: new MemoryJobRepository(),
-    rawRecordRepository: new MemoryRawRecordRepository(),
-    normalizedRecordRepository: new MemoryNormalizedRecordRepository(),
-    sheetSnapshotRepository: new MemorySheetSnapshotRepository(),
+    jobRepository,
+    rawRecordRepository,
+    normalizedRecordRepository,
+    sheetSnapshotRepository,
     userRepository: new MemoryUserProfileRepository(),
+    systemOwnershipRepository: {
+      listActiveAccountsWithOwners: async () => {
+        const ownerIds = activeOwnerIds();
+        return (await accountRepository.listActive()).filter((account) => ownerIds.has(account.ownerUserId));
+      },
+      listJobsByStatusesAcrossOwners: async (statuses) => {
+        const ownerIds = activeOwnerIds();
+        return (await jobRepository.listByStatuses(statuses)).filter((job) => ownerIds.has(job.ownerUserId));
+      },
+    },
+    forUser(ownerUserId: string) {
+      return {
+        accountRepository: accountRepository.forOwner(ownerUserId),
+        jobRepository: jobRepository.forOwner(ownerUserId),
+        rawRecordRepository: rawRecordRepository.forOwner(ownerUserId),
+        normalizedRecordRepository: normalizedRecordRepository.forOwner(ownerUserId),
+        sheetSnapshotRepository: sheetSnapshotRepository.forOwner(ownerUserId),
+      };
+    },
   };
 }
 
@@ -448,6 +617,7 @@ export function createAccount(params: Partial<AccountConfig> & {
   accountId: string;
 }): AccountConfig {
   const {
+    ownerUserId = DEFAULT_OWNER_USER_ID,
     clientName = "Test Client",
     platform,
     accountId,
@@ -459,6 +629,7 @@ export function createAccount(params: Partial<AccountConfig> & {
 
   return {
     id: `${platform}-${accountId}`,
+    ownerUserId,
     clientName,
     platform: platform as AccountConfig["platform"],
     accountId,
@@ -489,10 +660,10 @@ export async function setupTestApp({
     await writeFile(path.join(fixturesDir, filename), `${JSON.stringify(value, null, 2)}\n`, "utf8");
   }
 
-  const repositories = createMemoryRepositories();
+  const auth = new TestAuthStore();
+  const repositories = createMemoryRepositories(auth);
   await repositories.accountRepository.replaceAll(accounts);
 
-  const auth = new TestAuthStore();
   auth.addUser({
     id: "11111111-1111-4111-8111-111111111111",
     email: "admin@example.com",
@@ -535,11 +706,8 @@ export async function setupTestApp({
     clock: () => new Date(now),
     supabaseClient: auth.client,
     repositories,
-    storageUserId: "11111111-1111-4111-8111-111111111111",
     ...overrides,
   });
-
-  await app.services.statusService.bootstrapAccountSnapshots();
 
   const address = await app.start();
   const host = address.host === "::" ? "127.0.0.1" : address.host;

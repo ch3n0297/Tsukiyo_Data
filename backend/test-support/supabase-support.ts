@@ -1,7 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
 
-export const MIGRATION_SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000001';
-
 // 使用 NULL_UUID 作為 delete().neq() 的佔位值（不存在於任何真實資料）
 const NULL_UUID = '00000000-0000-0000-0000-000000000000';
 

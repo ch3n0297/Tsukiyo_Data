@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '../../lib/supabase-client.ts';
 import type { AccountConfig } from '../../types/account-config.ts';
+import { listActiveOwnerIds } from './active-owner-ids.ts';
 
 function mapRow(
   row: Record<string, unknown>,
@@ -7,6 +8,7 @@ function mapRow(
 ): AccountConfig {
   return {
     id: row.id as string,
+    ownerUserId: row.user_id as string,
     clientName: row.client_name as string,
     platform: row.platform as AccountConfig['platform'],
     accountId: row.account_id as string,
@@ -25,6 +27,25 @@ function mapRow(
       (row.created_at as string) ??
       '',
   };
+}
+
+export class SupabaseSystemAccountConfigRepository {
+  private readonly client: SupabaseClient;
+
+  constructor(client: SupabaseClient) {
+    this.client = client;
+  }
+
+  async listActiveAccountsWithOwners(): Promise<AccountConfig[]> {
+    const [activeOwnerIds, { data, error }] = await Promise.all([
+      listActiveOwnerIds(this.client),
+      this.client.from('account_configs').select('*'),
+    ]);
+    if (error) throw error;
+    return ((data ?? []) as Array<Record<string, unknown>>)
+      .filter((row) => activeOwnerIds.has(row.user_id as string))
+      .map((row) => mapRow(row, undefined));
+  }
 }
 
 export class SupabaseAccountConfigRepository {

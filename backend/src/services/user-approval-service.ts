@@ -184,6 +184,20 @@ export class UserApprovalService {
     return toPublicUser(user);
   }
 
+  async requireActiveUserById(userId: string): Promise<PublicUser> {
+    const { data, error } = await this.#supabaseClient.auth.admin.getUserById(userId);
+    if (error || !data.user) {
+      throw new HttpError(404, "USER_NOT_FOUND", "找不到指定的使用者。");
+    }
+
+    const profile = await this.#userRepository.findById(userId);
+    const user = mergeProfileWithMetadata(profile, data.user, this.#clock().toISOString());
+    if (user.status !== "active") {
+      throw statusError(user.status);
+    }
+    return toPublicUser(user);
+  }
+
   async listPendingUsers(): Promise<PublicUser[]> {
     const { data, error } = await this.#supabaseClient.auth.admin.listUsers({
       page: 1,

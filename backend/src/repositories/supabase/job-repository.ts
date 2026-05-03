@@ -1,9 +1,11 @@
 import type { SupabaseClient } from '../../lib/supabase-client.ts';
 import type { Job, JobStatus, TriggerType } from '../../types/job.ts';
+import { listActiveOwnerIds } from './active-owner-ids.ts';
 
 function mapRow(row: Record<string, unknown>): Job {
   return {
     id: row.id as string,
+    ownerUserId: row.user_id as string,
     accountKey: (row.account_key as string) ?? '',
     platform: (row.platform as Job['platform']) ?? 'instagram',
     accountId: (row.account_id as string) ?? '',
@@ -18,6 +20,28 @@ function mapRow(row: Record<string, unknown>): Job {
     errorCode: (row.error_code as string | null) ?? null,
     resultSummary: (row.result_summary as unknown | null) ?? null,
   };
+}
+
+export class SupabaseSystemJobRepository {
+  private readonly client: SupabaseClient;
+
+  constructor(client: SupabaseClient) {
+    this.client = client;
+  }
+
+  async listJobsByStatusesAcrossOwners(statuses: JobStatus[]): Promise<Job[]> {
+    const [activeOwnerIds, { data, error }] = await Promise.all([
+      listActiveOwnerIds(this.client),
+      this.client
+        .from('jobs')
+        .select('*')
+        .in('status', statuses),
+    ]);
+    if (error) throw error;
+    return (data ?? [])
+      .filter((row) => activeOwnerIds.has((row as Record<string, unknown>).user_id as string))
+      .map((row) => mapRow(row as Record<string, unknown>));
+  }
 }
 
 export class SupabaseJobRepository {

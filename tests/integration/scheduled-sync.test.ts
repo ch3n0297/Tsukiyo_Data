@@ -84,3 +84,69 @@ test("scheduled sync persists raw and normalized data and writes sheet snapshots
     await cleanup();
   }
 });
+
+test("scheduled sync enqueues and processes accounts under each owner", async () => {
+  const adminOwnerId = "11111111-1111-4111-8111-111111111111";
+  const memberOwnerId = "22222222-2222-4222-8222-222222222222";
+  const pendingOwnerId = "33333333-3333-4333-8333-333333333333";
+  const accounts = [
+    {
+      ...createAccount({ platform: "instagram", accountId: "ig-scheduled-admin" }),
+      ownerUserId: adminOwnerId,
+    },
+    {
+      ...createAccount({ platform: "instagram", accountId: "ig-scheduled-member" }),
+      ownerUserId: memberOwnerId,
+    },
+    {
+      ...createAccount({ platform: "instagram", accountId: "ig-scheduled-pending" }),
+      ownerUserId: pendingOwnerId,
+    },
+  ];
+
+  const { app, auth, baseUrl, cleanup } = await setupTestApp({
+    accounts,
+    fixtures: {
+      "instagram--ig-scheduled-admin.json": { items: [] },
+      "instagram--ig-scheduled-member.json": { items: [] },
+      "instagram--ig-scheduled-pending.json": { items: [] },
+    },
+  });
+
+  try {
+    auth.addUser({
+      id: memberOwnerId,
+      email: "scheduled-member@example.com",
+      displayName: "排程成員",
+      role: "member",
+      status: "active",
+    });
+    auth.addUser({
+      id: pendingOwnerId,
+      email: "scheduled-pending@example.com",
+      displayName: "排程待審成員",
+      role: "member",
+      status: "pending",
+    });
+
+    const { response, json } = await sendSignedJson({
+      baseUrl,
+      pathName: "/api/v1/internal/scheduled-sync",
+      body: { requested_by: "integration-test" },
+    });
+
+    assert.equal(response.status, 202);
+    assert.equal(json.accepted_jobs.length, 2);
+
+    await app.services.jobQueue.waitForIdle();
+
+    const jobs = await app.services.jobRepository.listAll();
+    assert.equal(jobs.length, 2);
+    assert.deepEqual(
+      jobs.map((job) => job.ownerUserId).sort(),
+      [adminOwnerId, memberOwnerId].sort(),
+    );
+  } finally {
+    await cleanup();
+  }
+});

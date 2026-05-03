@@ -5,8 +5,8 @@ import type { RouteContext, RouteContextWithParams } from "../types/route.ts";
 
 export async function handleUiAccountsRoute({ req, res, services }: RouteContext): Promise<void> {
   try {
-    await requireRouteUser({ req });
-    const payload = await services.uiDashboardService.listAccounts();
+    const { user } = await requireRouteUser({ req });
+    const payload = await services.forUser(user.id).uiDashboardService.listAccounts();
     sendJson(res, 200, payload);
   } catch (error) {
     const response = toErrorResponse(error);
@@ -21,8 +21,8 @@ export async function handleUiAccountDetailRoute({
   params,
 }: RouteContextWithParams): Promise<void> {
   try {
-    await requireRouteUser({ req });
-    const payload = await services.uiDashboardService.getAccountDetail({
+    const { user } = await requireRouteUser({ req });
+    const payload = await services.forUser(user.id).uiDashboardService.getAccountDetail({
       platform: params.platform,
       accountId: params.accountId,
     });
